@@ -1,0 +1,6 @@
+test/* linguist-vendored
+tools/* linguist-vendored
+docs/* linguist-documentation
+toyassembly/src/opcode.rs linguist-generated
+toyassembly/src/primitive.rs linguist-generated
+toyscript/src/keyword.rs linguist-generated

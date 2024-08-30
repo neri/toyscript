@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "lib/leb128",
+    # "lib/token",
+    "tas",
+]
+
+[profile.release]
+lto = true
+opt-level = "z"
+
+[profile.dev]
