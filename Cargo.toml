@@ -2,8 +2,9 @@
 resolver = "2"
 members = [
     "lib/leb128",
-    # "lib/token",
+    "lib/token",
     "tas",
+    "tsc",
 ]
 
 [profile.release]

@@ -1,4 +1,4 @@
-# ToyAssembly
+# ToyScript & ToyAssembly
 
 A Lightweight toy language environment with high affinity for WebAssembly
 
@@ -14,7 +14,8 @@ A Lightweight toy language environment with high affinity for WebAssembly
 
 ### Short-Term Goals
 
-* A subset of WebAssembly MVP
+* TypeScript-like toy language environment
+* A subset of the WebAssembly MVP environment
 
 ### Long-Term Goals
 
@@ -23,13 +24,16 @@ A Lightweight toy language environment with high affinity for WebAssembly
 ### Not Goals
 
 * Alternative to WebAssembly
+* Alternative to TypeScript
 
 ## Modules
 
 | Path           | Contents                 |
 | -------------- | ------------------------ |
-| `toyassembly/` | ToyAssembly Backend      |
+| `tsc/`         | ToyScript CLI Frontend   |
 | `tas/`         | ToyAssembly CLI Frontend |
+| `toyscript/`   | ToyScript Backend        |
+| `toyassembly/` | ToyAssembly Backend      |
 
 ## License
 

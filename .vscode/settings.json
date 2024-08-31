@@ -2,7 +2,10 @@
     "rust-analyzer.linkedProjects": [
         "./Cargo.toml",
         "./lib/leb128/Cargo.toml",
+        "./lib/token/Cargo.toml",
         "./tas/Cargo.toml",
         "./toyassembly/Cargo.toml",
+        "./toyscript/Cargo.toml",
+        "./tsc/Cargo.toml",
     ]
 }

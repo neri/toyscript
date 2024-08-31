@@ -1,0 +1,17 @@
+[package]
+name = "toyscript"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["std"]
+alloc = []
+std = ["alloc"]
+
+[dependencies]
+token = { path = "../lib/token" }
+# toyassembly = { path = "../toyassembly" }
+leb128 = { path = "../lib/leb128" }

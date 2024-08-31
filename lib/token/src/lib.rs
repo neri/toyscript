@@ -1,7 +1,17 @@
-//! Tokenizer
+//! Simple Tokenizer
+#![cfg_attr(not(test), no_std)]
 
-use crate::*;
-use core::{cmp, fmt, fmt::Write, ops::Range, str};
+extern crate alloc;
+
+use alloc::borrow::{Cow, ToOwned};
+use alloc::string::{String, ToString};
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::fmt::Write;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut, Range};
+use core::{cmp, str};
+use core::{fmt, ops::ControlFlow};
 
 mod utf8;
 use utf8::*;
@@ -16,25 +26,19 @@ pub enum TokenType<KEYWORD> {
     Eof,
     /// White space
     ///
-    /// Currently, this token is removed in the normal tokenization process
+    /// However, normal whitesapce characters are removed during tokenize.
     Whitespace,
-    /// New Line
-    ///
-    /// Currently, this token is removed in the normal tokenization process
-    NewLine,
     /// Line Comment
     LineComment,
     /// Block Comment
     BlockComment,
+    /// New Line
+    NewLine,
     /// Known Keyword
     Keyword(KEYWORD),
     /// Identifier
     Identifier,
-    /// Open Parenthesis
-    OpenParenthesis,
-    /// Close Parenthesis
-    CloseParenthesis,
-    /// Other Symbolic Characters
+    /// Symbol Character
     Symbol(char),
     /// Numeric Literal
     NumericLiteral,
@@ -55,10 +59,12 @@ impl<KEYWORD> TokenType<KEYWORD> {
     pub const DOUBLE_QUOTED_STRING_LITERAL: Self = Self::StringLiteral(QuoteType::DoubleQuote);
     pub const BACK_QUOTED_STRING_LITERAL: Self = Self::StringLiteral(QuoteType::BackQuote);
 
-    // pub const OPEN_BRACE: Self = Self::Symbol('{');
-    // pub const CLOSE_BRACE: Self = Self::Symbol('}');
-    // pub const OPEN_BRACKET: Self = Self::Symbol('[');
-    // pub const CLOSE_BRACKET: Self = Self::Symbol(']');
+    pub const OPEN_PARENTHESIS: Self = Self::Symbol('(');
+    pub const CLOSE_PARENTHESIS: Self = Self::Symbol(')');
+    pub const OPEN_BRACE: Self = Self::Symbol('{');
+    pub const CLOSE_BRACE: Self = Self::Symbol('}');
+    pub const OPEN_BRACKET: Self = Self::Symbol('[');
+    pub const CLOSE_BRACKET: Self = Self::Symbol(']');
 
     #[inline]
     pub fn is_ignorable(&self) -> bool {
@@ -80,8 +86,6 @@ impl<KEYWORD> TokenType<KEYWORD> {
             TokenType::LineComment => TokenType::LineComment,
             TokenType::BlockComment => TokenType::BlockComment,
             TokenType::NewLine => TokenType::NewLine,
-            TokenType::OpenParenthesis => TokenType::OpenParenthesis,
-            TokenType::CloseParenthesis => TokenType::CloseParenthesis,
             TokenType::Symbol(v) => TokenType::Symbol(*v),
             TokenType::NumericLiteral => TokenType::NumericLiteral,
             TokenType::FloatingNumberLiteral => TokenType::FloatingNumberLiteral,
@@ -103,8 +107,6 @@ where
             TokenType::StringLiteral(_) => f.write_str("StringLiteral"),
             TokenType::Keyword(keyword) => write!(f, "{}", keyword),
             TokenType::Symbol(symbol) => f.write_char(*symbol),
-            TokenType::OpenParenthesis => f.write_char('('),
-            TokenType::CloseParenthesis => f.write_char(')'),
             _ => (self as &dyn core::fmt::Debug).fmt(f),
         }
     }
@@ -171,7 +173,10 @@ impl Radix {
         if self.is_valid_chars(ch) {
             false
         } else {
-            ch.is_ascii_alphanumeric()
+            match ch {
+                '0'..='9' | 'A'..='Z' | 'a'..='z' => true,
+                _ => false,
+            }
         }
     }
 }
@@ -445,34 +450,26 @@ impl<KEYWORD: Copy + Clone> Tokenizer<KEYWORD> {
                     self._next_phase(&src, current_index, prev_index, ch, &keyword_resolver);
                 }
                 ParserPhase::BrokenNumber => {
-                    if ch.is_ascii_alphanumeric() {
+                    if self.is_id_trail_char(ch) {
                     } else {
                         self._next_phase(&src, current_index, prev_index, ch, &keyword_resolver);
                     }
                 }
-                ParserPhase::Semicolon => match ch {
-                    ';' => {
-                        // `;;` - line comment
+                ParserPhase::Slash => match ch {
+                    '*' => {
+                        // `/*` - block comment
+                        self.phase = ParserPhase::BlockComment;
+                    }
+                    '/' => {
+                        // `//` - line comment
                         self.phase = ParserPhase::LineComment;
                     }
                     _ => {
                         self._next_phase(&src, current_index, prev_index, ch, &keyword_resolver);
                     }
                 },
-                ParserPhase::OpenParenthesis => match ch {
-                    ';' => {
-                        // `(;` - block comment
-                        self.phase = ParserPhase::BlockComment;
-                    }
-                    _ => {
-                        self._next_phase(&src, current_index, prev_index, ch, &keyword_resolver);
-                    }
-                },
-                ParserPhase::CloseParenthesis => {
-                    self._next_phase(&src, current_index, prev_index, ch, &keyword_resolver);
-                }
                 ParserPhase::BlockComment => {
-                    if sb.len() >= 4 && sb.ends_with(";)") {
+                    if sb.ends_with("*/") {
                         self._next_phase(&src, current_index, prev_index, ch, &keyword_resolver);
                         skip_newline = true;
                     }
@@ -515,11 +512,11 @@ impl<KEYWORD: Copy + Clone> Tokenizer<KEYWORD> {
                     if skip_newline {
                         skip_newline = false;
                     } else if !matches!(self.phase, ParserPhase::BlockComment) {
-                        // self.fragments.push(TokenFragment::new(
-                        //     TokenType::NewLine,
-                        //     self.start,
-                        //     line_end,
-                        // ));
+                        self.fragments.push(TokenFragment::new(
+                            TokenType::NewLine,
+                            self.start,
+                            line_end,
+                        ));
                     }
 
                     self.column_number = 1;
@@ -671,23 +668,9 @@ impl<KEYWORD: Copy + Clone> Tokenizer<KEYWORD> {
                     position_end,
                 ));
             }
-            ParserPhase::Semicolon => {
+            ParserPhase::Slash => {
                 self.fragments.push(TokenFragment::new(
-                    TokenType::Symbol(';'),
-                    self.start,
-                    position_end,
-                ));
-            }
-            ParserPhase::OpenParenthesis => {
-                self.fragments.push(TokenFragment::new(
-                    TokenType::OpenParenthesis,
-                    self.start,
-                    position_end,
-                ));
-            }
-            ParserPhase::CloseParenthesis => {
-                self.fragments.push(TokenFragment::new(
-                    TokenType::CloseParenthesis,
+                    TokenType::Symbol('/'),
                     self.start,
                     position_end,
                 ));
@@ -751,9 +734,7 @@ impl<KEYWORD: Copy + Clone> Tokenizer<KEYWORD> {
                 '\x22' => ParserPhase::Quote(QuoteType::DoubleQuote),
                 '\x27' => ParserPhase::Quote(QuoteType::SingleQuote),
                 '\x60' => ParserPhase::Quote(QuoteType::BackQuote),
-                ';' => ParserPhase::Semicolon,
-                '(' => ParserPhase::OpenParenthesis,
-                ')' => ParserPhase::CloseParenthesis,
+                '/' => ParserPhase::Slash,
                 '\u{FEFF}' | '\u{FFFE}' => ParserPhase::UncontinuableChar,
                 _ => {
                     if ch.is_ascii_graphic() {
@@ -796,10 +777,7 @@ impl<KEYWORD: Copy + Clone> Tokenizer<KEYWORD> {
 
     #[inline]
     pub fn is_id_trail_char(&self, ch: char) -> bool {
-        match ch {
-            ' ' | '"' | ',' | ';' | '(' | ')' | '[' | ']' | '{' | '}' => false,
-            _ => ch.is_ascii_graphic(),
-        }
+        Self::is_id_leading_char(ch) || Self::is_numeric(ch)
     }
 }
 
@@ -818,12 +796,8 @@ enum ParserPhase {
     NumericAndDoubleDot,
     BrokenNumber,
 
-    /// `;` - maybe comment
-    Semicolon,
-
-    /// `(` - maybe comment
-    OpenParenthesis,
-    CloseParenthesis,
+    /// `/` - maybe comment in C
+    Slash,
 
     LineComment,
     BlockComment,
@@ -859,13 +833,8 @@ pub struct TokenPosition(pub (u32, u32));
 
 impl TokenPosition {
     #[inline]
-    pub fn start(&self) -> usize {
-        (self.0).0 as usize
-    }
-
-    #[inline]
-    pub fn end(&self) -> usize {
-        (self.0).1 as usize
+    pub const fn new(start: u32, end: u32) -> Self {
+        Self((start, end))
     }
 
     #[inline]
@@ -876,6 +845,16 @@ impl TokenPosition {
     #[inline]
     pub const fn empty() -> Self {
         Self((0, 0))
+    }
+
+    #[inline]
+    pub fn start(&self) -> usize {
+        (self.0).0 as usize
+    }
+
+    #[inline]
+    pub fn end(&self) -> usize {
+        (self.0).1 as usize
     }
 
     #[inline]
@@ -905,7 +884,7 @@ impl<KEYWORD: Copy + Clone> TokenFragment<KEYWORD> {
     pub fn new(token_type: TokenType<KEYWORD>, file_start: usize, file_end: usize) -> Self {
         Self {
             token_type,
-            position: TokenPosition((file_start as u32, file_end as u32)),
+            position: TokenPosition::new(file_start as u32, file_end as u32),
         }
     }
 }
@@ -951,35 +930,81 @@ pub enum TokenErrorKind {
     TooLargeFile,
 }
 
+pub struct ArcStringSlice {
+    buffer: Arc<Vec<u8>>,
+    range: TokenPosition,
+}
+
+impl ArcStringSlice {
+    #[inline]
+    fn new(buffer: &Arc<Vec<u8>>, range: TokenPosition) -> Self {
+        Self {
+            buffer: buffer.clone(),
+            range,
+        }
+    }
+
+    #[inline]
+    pub fn empty() -> Self {
+        Self {
+            buffer: Arc::new(Vec::new()),
+            range: TokenPosition::empty(),
+        }
+    }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        self.buffer
+            .get(self.range.range())
+            .map(|v| unsafe { core::str::from_utf8_unchecked(v) })
+            .unwrap_or_default()
+    }
+}
+
+impl core::fmt::Debug for ArcStringSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ArcStringSlice")
+            .field("source", &self.as_str())
+            .field("range", &self.range)
+            .finish()
+    }
+}
+
+impl ToString for ArcStringSlice {
+    #[inline]
+    fn to_string(&self) -> String {
+        self.as_str().to_owned()
+    }
+}
+
+impl Clone for ArcStringSlice {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self {
+            buffer: self.buffer.clone(),
+            range: self.range.clone(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Token<KEYWORD> {
-    arc_buffer: Arc<Vec<u8>>,
+    str: ArcStringSlice,
     token_type: TokenType<KEYWORD>,
-    position: TokenPosition,
 }
 
 impl<KEYWORD> Token<KEYWORD> {
     #[inline]
     pub fn eof() -> Self {
         Self {
-            arc_buffer: Arc::new(Vec::new()),
+            str: ArcStringSlice::empty(),
             token_type: TokenType::Eof,
-            position: TokenPosition::empty(),
         }
     }
 
     #[inline]
-    #[track_caller]
-    fn _source(arc_buffer: &Arc<Vec<u8>>, range: Range<usize>) -> &str {
-        arc_buffer
-            .get(range.clone())
-            .map(|v| unsafe { core::str::from_utf8_unchecked(v) })
-            .unwrap_or_default()
-    }
-
-    #[inline]
-    #[track_caller]
     pub fn source(&self) -> &str {
-        Self::_source(&self.arc_buffer, self.position.range())
+        self.str.as_str()
     }
 
     #[inline]
@@ -989,7 +1014,12 @@ impl<KEYWORD> Token<KEYWORD> {
 
     #[inline]
     pub fn position(&self) -> TokenPosition {
-        self.position
+        self.str.range
+    }
+
+    #[inline]
+    pub fn into_keyword(self) -> Result<KeywordToken<KEYWORD>, Token<KEYWORD>> {
+        KeywordToken::from_token(self)
     }
 
     #[inline]
@@ -1007,22 +1037,19 @@ impl<KEYWORD> Token<KEYWORD> {
             TokenType::Keyword(_) | TokenType::Identifier => {
                 if let Some(key2) = keyword_resolver(self.source()) {
                     Token::<KEYWORD2> {
-                        arc_buffer: self.arc_buffer.clone(),
+                        str: self.str.clone(),
                         token_type: TokenType::Keyword(key2),
-                        position: self.position,
                     }
                 } else {
                     Token::<KEYWORD2> {
-                        arc_buffer: self.arc_buffer.clone(),
+                        str: self.str.clone(),
                         token_type: TokenType::Identifier,
-                        position: self.position,
                     }
                 }
             }
             _ => Token::<KEYWORD2> {
-                arc_buffer: self.arc_buffer.clone(),
+                str: self.str.clone(),
                 token_type: self.token_type.convert(),
-                position: self.position,
             },
         }
     }
@@ -1056,6 +1083,19 @@ impl<KEYWORD> Token<KEYWORD> {
             },
             '1'..='9' => Some((0, Radix::Dec)),
             _ => None,
+        }
+    }
+
+    pub fn string_literal<'a>(&'a self) -> Result<(Cow<'a, str>, QuoteType), StringLiteralError> {
+        let TokenType::StringLiteral(quote_type) = *self.token_type() else {
+            return Err(StringLiteralError::NaT);
+        };
+        let source = &self.source()[1..self.source().len() - 1];
+        if self.source().find('\\').is_none() {
+            Ok((Cow::Borrowed(source), quote_type))
+        } else {
+            self.raw_bytes_literal(false)
+                .map(|v| (Cow::Owned(String::from_utf8(v.0).unwrap()), v.1))
         }
     }
 
@@ -1206,37 +1246,6 @@ impl<KEYWORD> Token<KEYWORD> {
             Ok((sb, quote_type))
         }
     }
-
-    #[inline]
-    pub fn into_keyword(self) -> Result<KeywordToken<KEYWORD>, Token<KEYWORD>> {
-        KeywordToken::from_token(self)
-    }
-
-    pub fn string_literal<'a>(&'a self) -> Result<(Cow<'a, str>, QuoteType), StringLiteralError> {
-        let TokenType::StringLiteral(quote_type) = *self.token_type() else {
-            return Err(StringLiteralError::NaT);
-        };
-        let source = &self.source()[1..self.source().len() - 1];
-        if self.source().find('\\').is_none() {
-            Ok((Cow::Borrowed(source), quote_type))
-        } else {
-            self.raw_bytes_literal(false)
-                .map(|v| (Cow::Owned(String::from_utf8(v.0).unwrap()), v.1))
-        }
-    }
-}
-
-impl<KEYWORD> core::fmt::Debug for Token<KEYWORD>
-where
-    KEYWORD: core::fmt::Debug + core::fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Token")
-            .field("source", &self.source())
-            .field("token_type", &self.token_type)
-            .field("position", &self.position)
-            .finish()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1251,9 +1260,8 @@ pub enum StringLiteralError {
 
 #[derive(Debug)]
 pub struct KeywordToken<KEYWORD> {
-    arc_buffer: Arc<Vec<u8>>,
+    str: ArcStringSlice,
     keyword: KEYWORD,
-    position: TokenPosition,
 }
 
 impl<KEYWORD> KeywordToken<KEYWORD> {
@@ -1261,9 +1269,8 @@ impl<KEYWORD> KeywordToken<KEYWORD> {
     pub fn from_token(token: Token<KEYWORD>) -> Result<KeywordToken<KEYWORD>, Token<KEYWORD>> {
         match token.token_type {
             TokenType::Keyword(keyword) => Ok(KeywordToken {
-                arc_buffer: token.arc_buffer.clone(),
+                str: token.str.clone(),
                 keyword,
-                position: token.position,
             }),
             _ => Err(token),
         }
@@ -1272,9 +1279,8 @@ impl<KEYWORD> KeywordToken<KEYWORD> {
     #[inline]
     pub fn into_token(self) -> Token<KEYWORD> {
         Token {
-            arc_buffer: self.arc_buffer,
+            str: self.str,
             token_type: TokenType::Keyword(self.keyword),
-            position: self.position,
         }
     }
 
@@ -1284,18 +1290,14 @@ impl<KEYWORD> KeywordToken<KEYWORD> {
         KEYWORD: Copy,
     {
         Token {
-            arc_buffer: self.arc_buffer.clone(),
+            str: self.str.clone(),
             token_type: TokenType::Keyword(self.keyword),
-            position: self.position,
         }
     }
 
     #[inline]
-    pub fn source(&self) -> &str
-    where
-        KEYWORD: Copy,
-    {
-        Token::<KEYWORD>::_source(&self.arc_buffer, self.position.range())
+    pub fn source(&self) -> &str {
+        self.str.as_str()
     }
 
     #[inline]
@@ -1305,7 +1307,7 @@ impl<KEYWORD> KeywordToken<KEYWORD> {
 
     #[inline]
     pub fn position(&self) -> TokenPosition {
-        self.position
+        self.str.range
     }
 }
 
@@ -1336,6 +1338,36 @@ where
     lines: Arc<Vec<(usize, usize)>>,
     index: usize,
     range: Range<usize>,
+}
+
+pub struct Snapshot<'a, KEYWORD>
+where
+    KEYWORD: Copy + Clone,
+{
+    inner: TokenStream<KEYWORD>,
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl<KEYWORD> Deref for Snapshot<'_, KEYWORD>
+where
+    KEYWORD: Copy + Clone,
+{
+    type Target = TokenStream<KEYWORD>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<KEYWORD> DerefMut for Snapshot<'_, KEYWORD>
+where
+    KEYWORD: Copy + Clone,
+{
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
 }
 
 impl<KEYWORD: Copy + Clone> Tokens<KEYWORD> {
@@ -1377,31 +1409,24 @@ impl<KEYWORD: Copy + Clone> fmt::Debug for Tokens<KEYWORD> {
     }
 }
 
-impl<KEYWORD> fmt::Debug for TokenStream<KEYWORD>
-where
-    KEYWORD: Copy + Clone + PartialEq + core::fmt::Debug + core::fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let snapshot = self.snapshot();
-        f.debug_list().entries(snapshot.into_iter()).finish()
-    }
-}
-
 impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
     #[inline]
-    pub fn snapshot(&self) -> Self {
-        Self {
-            arc_buffer: self.arc_buffer.clone(),
-            fragments: self.fragments.clone(),
-            last: self.last,
-            lines: self.lines.clone(),
-            index: self.index,
-            range: self.index..self.range.end,
+    pub fn snapshot<'a>(&'a self) -> Snapshot<'a, KEYWORD> {
+        Snapshot {
+            inner: Self {
+                arc_buffer: self.arc_buffer.clone(),
+                fragments: self.fragments.clone(),
+                last: self.last,
+                lines: self.lines.clone(),
+                index: self.index,
+                range: self.index..self.range.end,
+            },
+            _phantom: PhantomData,
         }
     }
 
     #[inline]
-    pub fn make_replay(&self, snapshot: TokenStream<KEYWORD>) -> TokenStream<KEYWORD> {
+    pub fn make_replay<'a>(&'a self, snapshot: Snapshot<'a, KEYWORD>) -> TokenStream<KEYWORD> {
         let range_end = if self.index > 0 { self.index - 1 } else { 0 };
         let last_position = TokenPosition::new_at(self.fragments[self.index].position.start());
         TokenStream {
@@ -1419,8 +1444,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
 
     pub fn get_raw(&self, range: TokenPosition) -> RawToken {
         RawToken {
-            arc_buffer: self.arc_buffer.clone(),
-            position: range,
+            str: ArcStringSlice::new(&self.arc_buffer, range),
         }
     }
 
@@ -1432,9 +1456,8 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
             .flatten()?;
 
         Some(Token {
-            arc_buffer: self.arc_buffer.clone(),
+            str: ArcStringSlice::new(&self.arc_buffer, fragment.position),
             token_type: fragment.token_type,
-            position: fragment.position,
         })
     }
 
@@ -1445,9 +1468,8 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
 
     pub fn eof(&self) -> Token<KEYWORD> {
         Token {
-            arc_buffer: self.arc_buffer.clone(),
+            str: ArcStringSlice::new(&self.arc_buffer, self.last.position),
             token_type: self.last.token_type,
-            position: self.last.position,
         }
     }
 
@@ -1462,9 +1484,8 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
             let fragment = self.fragments.get(self.index - 1)?;
 
             Some(Token {
-                arc_buffer: self.arc_buffer.clone(),
+                str: ArcStringSlice::new(&self.arc_buffer, fragment.position),
                 token_type: fragment.token_type,
-                position: fragment.position,
             })
         } else {
             None
@@ -1503,9 +1524,11 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
                 token
             } else {
                 Token {
-                    arc_buffer: Arc::new(Vec::new()),
+                    str: ArcStringSlice::new(
+                        &Arc::new(Vec::new()),
+                        TokenPosition::new_at(current.position().end()),
+                    ),
                     token_type: TokenType::Whitespace,
-                    position: TokenPosition::new_at(current.position().end()),
                 }
             }
         })
@@ -1522,9 +1545,11 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
                 token
             } else {
                 Token {
-                    arc_buffer: Arc::new(Vec::new()),
+                    str: ArcStringSlice::new(
+                        &Arc::new(Vec::new()),
+                        TokenPosition::new_at(current.position().end()),
+                    ),
                     token_type: TokenType::Whitespace,
-                    position: TokenPosition::new_at(current.position().end()),
                 }
             }
         })
@@ -1651,27 +1676,25 @@ impl<KEYWORD: Copy + Clone + PartialEq> Iterator for TokenStream<KEYWORD> {
 }
 
 pub struct RawToken {
-    arc_buffer: Arc<Vec<u8>>,
-    position: TokenPosition,
+    str: ArcStringSlice,
 }
 
 impl RawToken {
     #[inline]
     pub fn source<KEYWORD>(&self) -> &str {
-        Token::<KEYWORD>::_source(&self.arc_buffer, self.position.range())
+        self.str.as_str()
     }
 
     #[inline]
     pub fn position(&self) -> TokenPosition {
-        self.position
+        self.str.range
     }
 
     #[inline]
     pub fn as_token<T>(&self) -> Token<T> {
         Token {
-            arc_buffer: self.arc_buffer.clone(),
+            str: self.str.clone(),
             token_type: TokenType::Uncategorized,
-            position: self.position(),
         }
     }
 }
@@ -1680,7 +1703,7 @@ impl core::fmt::Debug for RawToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Token")
             .field("source", &self.source::<()>())
-            .field("position", &self.position)
+            .field("position", &self.position())
             .finish()
     }
 }
