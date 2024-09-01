@@ -12,7 +12,7 @@ extern crate alloc;
 
 #[allow(unused)]
 pub(crate) use alloc::{
-    borrow::Cow,
+    borrow::{Cow, ToOwned},
     boxed::Box,
     collections::BTreeMap,
     rc::Rc,
@@ -26,15 +26,13 @@ pub use error::*;
 use keyword::Keyword;
 
 use alloc::format;
-use ast::{Ast, Identifier};
+use ast::{identifier::Identifier, Ast};
 // use cg::CodeGen;
 // use namespace::NamespaceOld;
 use token::{Token, TokenStream, TokenType, Tokenizer};
 // use types::TypeSystem;
 
-pub struct ToyScript {
-    //
-}
+pub struct ToyScript;
 
 impl ToyScript {
     fn _from_src<F, R>(file_name: &str, src: Vec<u8>, kernel: F) -> Result<R, String>
@@ -89,7 +87,7 @@ pub(crate) fn try_expect_eol(
         }
         Err(CompileError::missing_eol(&token))
     } else {
-        Err(CompileError::missing_eol(&Token::eof()))
+        Err(CompileError::missing_eol(&tokens.eof()))
     }
 }
 
@@ -101,28 +99,4 @@ pub(crate) fn expect_eol(tokens: &mut TokenStream<Keyword>) -> Result<(), Compil
         TokenType::Symbol('}') => (),
         _ => (),
     })
-}
-
-pub(crate) fn expect_type(tokens: &mut TokenStream<Keyword>) -> Result<Identifier, CompileError> {
-    tokens.skip_ignorable();
-    let token = tokens.shift().unwrap();
-    match token.token_type() {
-        TokenType::Identifier => Identifier::parse(token, tokens),
-        TokenType::Keyword(keyword) => {
-            if keyword.is_type_identifier() {
-                Ok(Identifier::from_keyword(*keyword, token.position()))
-            } else {
-                Err(CompileError::with_token(
-                    CompileErrorKind::SyntaxError,
-                    &token,
-                    Some("Expected TypeIdentifier".to_string()),
-                ))
-            }
-        }
-        _ => Err(CompileError::with_token(
-            CompileErrorKind::SyntaxError,
-            &token,
-            Some("Expected TypeIdentifier".to_string()),
-        )),
-    }
 }

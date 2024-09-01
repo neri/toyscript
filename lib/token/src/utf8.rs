@@ -12,7 +12,7 @@ impl Utf8StateMachine {
     }
 
     #[inline]
-    pub fn force_clear(&mut self) {
+    pub unsafe fn force_clear(&mut self) {
         self.buf = 0;
     }
 
@@ -48,6 +48,9 @@ impl Utf8StateMachine {
                 _ => Err(byte),
             }
         } else {
+            if !self.needs_trail_bytes() {
+                return Err(byte);
+            }
             match byte {
                 0x80..=0xBF => {
                     self.buf |= (byte as u32).wrapping_shl(self.len().wrapping_mul(8) as u32);
@@ -105,7 +108,9 @@ impl Utf8StateMachine {
     #[inline]
     pub fn take_valid_char(&mut self) -> Option<char> {
         self.valid_char().map(|v| {
-            self.force_clear();
+            unsafe {
+                self.force_clear();
+            }
             v
         })
     }

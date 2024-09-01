@@ -2,6 +2,7 @@
 
 use super::{block::Block, typeparam::TypeParameter, Identifier};
 use crate::{keyword::ModifierFlag, *};
+use ast::class::TypeDescriptor;
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
@@ -10,7 +11,7 @@ pub struct FunctionDeclaration {
     identifier: Identifier,
     type_params: Vec<TypeParameter>,
     parameters: Box<[Parameter]>,
-    result_type: Option<Identifier>,
+    result_type: Option<TypeDescriptor>,
     body: Block,
     position: TokenPosition,
 }
@@ -59,7 +60,7 @@ impl FunctionDeclaration {
             };
 
             expect_symbol(tokens, ':')?;
-            let var_type = expect_type(tokens)?;
+            let var_type = TypeDescriptor::expect(tokens)?;
             parameters.push(Parameter::new(var_name, var_type));
 
             let next = expect(tokens, &[TokenType::Symbol(','), TokenType::Symbol(')')])?;
@@ -69,13 +70,12 @@ impl FunctionDeclaration {
         }
 
         let result_type = if tokens.expect_symbol(':').is_ok() {
-            let result_type = expect_type(tokens)?;
-            Some(result_type)
+            Some(TypeDescriptor::expect(tokens)?)
         } else {
             None
         };
 
-        let block = if modifiers.contains(ModifierFlag::DECLARE) {
+        let block = if modifiers.contains(ModifierFlag::IMPORT) {
             expect_eol(tokens)?;
             Block::empty()
         } else {
@@ -110,12 +110,17 @@ impl FunctionDeclaration {
     }
 
     #[inline]
+    pub fn type_params(&self) -> &[TypeParameter] {
+        &self.type_params
+    }
+
+    #[inline]
     pub fn parameters(&self) -> &[Parameter] {
         &self.parameters
     }
 
     #[inline]
-    pub fn result_type(&self) -> Option<&Identifier> {
+    pub fn result_type(&self) -> Option<&TypeDescriptor> {
         self.result_type.as_ref()
     }
 
@@ -130,19 +135,18 @@ impl FunctionDeclaration {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct Parameter {
     identifier: Identifier,
-    type_id: Identifier,
+    type_desc: TypeDescriptor,
 }
 
 impl Parameter {
     #[inline]
-    pub fn new(identifier: Identifier, type_id: Identifier) -> Self {
+    pub fn new(identifier: Identifier, type_desc: TypeDescriptor) -> Self {
         Self {
             identifier,
-            type_id,
+            type_desc,
         }
     }
 
@@ -152,7 +156,7 @@ impl Parameter {
     }
 
     #[inline]
-    pub fn type_id(&self) -> &Identifier {
-        &self.type_id
+    pub fn type_desc(&self) -> &TypeDescriptor {
+        &self.type_desc
     }
 }

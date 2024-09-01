@@ -9,6 +9,7 @@ impl Keyword {
             Keyword::Async,
             Keyword::Export,
             Keyword::Get,
+            Keyword::Import,
             Keyword::Private,
             Keyword::Protected,
             Keyword::Public,
@@ -65,18 +66,21 @@ impl ModifierFlag {
     #[rustfmt::skip]
     pub const EXPORT: Self      = Self(0b0000_0100);
     #[rustfmt::skip]
-    pub const PRIVATE: Self     = Self(0b0000_1000);
+    pub const IMPORT: Self      = Self(0b0000_1000);
     #[rustfmt::skip]
-    pub const PROTECTED: Self   = Self(0b0001_0000);
+    pub const PRIVATE: Self     = Self(0b0001_0000);
     #[rustfmt::skip]
-    pub const PUBLIC: Self      = Self(0b0010_0000);
+    pub const PROTECTED: Self   = Self(0b0010_0000);
     #[rustfmt::skip]
-    pub const STATIC: Self      = Self(0b0100_0000);
+    pub const PUBLIC: Self      = Self(0b0100_0000);
+    #[rustfmt::skip]
+    pub const STATIC: Self      = Self(0b1000_0000);
 
     const ALL_CAES: &'static [Self] = &[
         Self::ASYNC,
         Self::DECLARE,
         Self::EXPORT,
+        Self::IMPORT,
         Self::PRIVATE,
         Self::PROTECTED,
         Self::PUBLIC,
@@ -99,6 +103,8 @@ impl ModifierFlag {
                 "declare"
             } else if v.contains(Self::EXPORT) {
                 "export"
+            } else if v.contains(Self::IMPORT) {
+                "import"
             } else if v.contains(Self::PRIVATE) {
                 "private"
             } else if v.contains(Self::PROTECTED) {
@@ -119,6 +125,7 @@ impl ModifierFlag {
             match keyword {
                 Keyword::Async => result.insert(Self::ASYNC),
                 Keyword::Export => result.insert(Self::EXPORT),
+                Keyword::Import => result.insert(Self::IMPORT),
                 Keyword::Public => result.insert(Self::PUBLIC),
                 Keyword::Private => result.insert(Self::PRIVATE),
                 Keyword::Protected => result.insert(Self::PROTECTED),

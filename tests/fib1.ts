@@ -1,4 +1,4 @@
-function fib(n: int): int {
+export function fib(n: int): int {
     var a = 0, b = 1
     if (n > 0) {
         while (--n > 0) {

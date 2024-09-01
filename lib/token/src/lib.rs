@@ -937,7 +937,7 @@ pub struct ArcStringSlice {
 
 impl ArcStringSlice {
     #[inline]
-    fn new(buffer: &Arc<Vec<u8>>, range: TokenPosition) -> Self {
+    unsafe fn from_buffer(buffer: &Arc<Vec<u8>>, range: TokenPosition) -> Self {
         Self {
             buffer: buffer.clone(),
             range,
@@ -945,10 +945,10 @@ impl ArcStringSlice {
     }
 
     #[inline]
-    pub fn empty() -> Self {
+    pub fn empty_at(position: usize) -> Self {
         Self {
             buffer: Arc::new(Vec::new()),
-            range: TokenPosition::empty(),
+            range: TokenPosition::new_at(position),
         }
     }
 
@@ -994,14 +994,6 @@ pub struct Token<KEYWORD> {
 }
 
 impl<KEYWORD> Token<KEYWORD> {
-    #[inline]
-    pub fn eof() -> Self {
-        Self {
-            str: ArcStringSlice::empty(),
-            token_type: TokenType::Eof,
-        }
-    }
-
     #[inline]
     pub fn source(&self) -> &str {
         self.str.as_str()
@@ -1438,13 +1430,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
             },
             lines: self.lines.clone(),
             index: snapshot.index,
-            range: snapshot.index..range_end,
-        }
-    }
-
-    pub fn get_raw(&self, range: TokenPosition) -> RawToken {
-        RawToken {
-            str: ArcStringSlice::new(&self.arc_buffer, range),
+            range: snapshot.index..range_end.max(snapshot.index),
         }
     }
 
@@ -1456,7 +1442,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
             .flatten()?;
 
         Some(Token {
-            str: ArcStringSlice::new(&self.arc_buffer, fragment.position),
+            str: unsafe { ArcStringSlice::from_buffer(&self.arc_buffer, fragment.position) },
             token_type: fragment.token_type,
         })
     }
@@ -1468,7 +1454,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
 
     pub fn eof(&self) -> Token<KEYWORD> {
         Token {
-            str: ArcStringSlice::new(&self.arc_buffer, self.last.position),
+            str: unsafe { ArcStringSlice::from_buffer(&self.arc_buffer, self.last.position) },
             token_type: self.last.token_type,
         }
     }
@@ -1484,7 +1470,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
             let fragment = self.fragments.get(self.index - 1)?;
 
             Some(Token {
-                str: ArcStringSlice::new(&self.arc_buffer, fragment.position),
+                str: unsafe { ArcStringSlice::from_buffer(&self.arc_buffer, fragment.position) },
                 token_type: fragment.token_type,
             })
         } else {
@@ -1502,7 +1488,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
 
     #[inline]
     pub fn unshift(&mut self) {
-        if self.index > 0 {
+        if self.index > self.range.start {
             self.index -= 1;
         }
     }
@@ -1524,10 +1510,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
                 token
             } else {
                 Token {
-                    str: ArcStringSlice::new(
-                        &Arc::new(Vec::new()),
-                        TokenPosition::new_at(current.position().end()),
-                    ),
+                    str: ArcStringSlice::empty_at(current.position().end()),
                     token_type: TokenType::Whitespace,
                 }
             }
@@ -1545,10 +1528,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
                 token
             } else {
                 Token {
-                    str: ArcStringSlice::new(
-                        &Arc::new(Vec::new()),
-                        TokenPosition::new_at(current.position().end()),
-                    ),
+                    str: ArcStringSlice::empty_at(current.position().end()),
                     token_type: TokenType::Whitespace,
                 }
             }
@@ -1569,7 +1549,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
     #[inline]
     pub fn transaction<F, B, C>(&mut self, kernel: F) -> Result<C, B>
     where
-        F: FnOnce(&mut Self) -> ControlFlow<B, C>,
+        F: FnOnce(&mut Snapshot<KEYWORD>) -> ControlFlow<B, C>,
     {
         let mut snapshot = self.snapshot();
         match kernel(&mut snapshot) {
@@ -1654,7 +1634,7 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
                     ControlFlow::Break(token)
                 }
             }
-            None => ControlFlow::Break(Token::eof()),
+            None => ControlFlow::Break(tokens.eof()),
         })
     }
 
@@ -1672,38 +1652,5 @@ impl<KEYWORD: Copy + Clone + PartialEq> Iterator for TokenStream<KEYWORD> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.shift()
-    }
-}
-
-pub struct RawToken {
-    str: ArcStringSlice,
-}
-
-impl RawToken {
-    #[inline]
-    pub fn source<KEYWORD>(&self) -> &str {
-        self.str.as_str()
-    }
-
-    #[inline]
-    pub fn position(&self) -> TokenPosition {
-        self.str.range
-    }
-
-    #[inline]
-    pub fn as_token<T>(&self) -> Token<T> {
-        Token {
-            str: self.str.clone(),
-            token_type: TokenType::Uncategorized,
-        }
-    }
-}
-
-impl core::fmt::Debug for RawToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Token")
-            .field("source", &self.source::<()>())
-            .field("position", &self.position())
-            .finish()
     }
 }

@@ -1,4 +1,4 @@
-use crate::{ast::Identifier, *};
+use crate::{ast::identifier::Identifier, *};
 use core::cmp;
 use token::{TokenError, TokenPosition};
 // use types::TypeDescriptor;
@@ -21,11 +21,8 @@ pub enum ErrorPosition {
 pub enum CompileErrorKind {
     TokenParseError(TokenError),
 
-    TooLargeFile,
-    InvalidChar,
-    UnexpectedEof,
-
     SyntaxError,
+    InvalidLiteral,
     DuplicateIdentifier,
     IdentifierNotFound,
     TypeError,
@@ -144,6 +141,15 @@ impl CompileError {
             Self::explanation_token_strings(&[*token.token_type()]).unwrap()
         );
         Self::with_token(CompileErrorKind::SyntaxError, token, Some(explanation))
+    }
+
+    #[inline]
+    pub fn invalid_literal(explanation: &str, position: TokenPosition) -> Self {
+        Self::with_position(
+            CompileErrorKind::InvalidLiteral,
+            position,
+            Some(explanation.to_owned()),
+        )
     }
 
     #[inline]

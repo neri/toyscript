@@ -4,7 +4,7 @@
 use super::Identifier;
 use crate::{keyword::Keyword, *};
 use core::ops::ControlFlow;
-use token::{TokenPosition, TokenStream};
+use token::{StringLiteralError, TokenPosition, TokenStream};
 
 #[derive(Clone)]
 pub struct Expression {
@@ -136,8 +136,34 @@ impl Expression {
                     items.push(FlatUnary::Value(Unary::NumericLiteral(s, token.position())));
                 }
                 TokenType::StringLiteral(_) => {
-                    let s = token.source().to_string();
-                    items.push(FlatUnary::Value(Unary::StringLiteral(s, token.position())));
+                    let str = match token.string_literal() {
+                        Ok((s, _t)) => s.into_owned(),
+                        Err(err) => {
+                            let err = match err {
+                                StringLiteralError::NaT => CompileError::invalid_literal(
+                                    "Invalid literal",
+                                    token.position(),
+                                ),
+                                StringLiteralError::InvalidCharSequence(at) => {
+                                    CompileError::invalid_literal(
+                                        "Invalid character sequence",
+                                        TokenPosition::new_at(token.position().start() + at),
+                                    )
+                                }
+                                StringLiteralError::InvalidUnicodeChar(at) => {
+                                    CompileError::invalid_literal(
+                                        "Invalid unicode",
+                                        TokenPosition::new_at(token.position().start() + at),
+                                    )
+                                }
+                            };
+                            return Err(err);
+                        }
+                    };
+                    items.push(FlatUnary::Value(Unary::StringLiteral(
+                        str,
+                        token.position(),
+                    )));
                 }
                 TokenType::Keyword(keyword) => {
                     if keyword.is_constant_value() {
@@ -193,10 +219,10 @@ impl Expression {
         }
 
         if let Ok((op, position)) =
-            tokens.transaction(|snapshot| match UnaryOperator::parse_postfix(snapshot) {
+            tokens.transaction(|tokens| match UnaryOperator::parse_postfix(tokens) {
                 Ok((op, position)) => ControlFlow::Continue((
                     op,
-                    position.merged(&snapshot.peek_last().unwrap().position()),
+                    position.merged(&tokens.peek_last().unwrap().position()),
                 )),
                 Err(_) => ControlFlow::Break(()),
             })
@@ -205,13 +231,13 @@ impl Expression {
         }
 
         if allow_binary {
-            if let Ok((binop, position)) = tokens.transaction(|snapshot| {
-                if let Some(token) = snapshot.shift() {
+            if let Ok((binop, position)) = tokens.transaction(|tokens| {
+                if let Some(token) = tokens.shift() {
                     let position = token.position();
-                    match BinaryOperator::parse(token, snapshot) {
+                    match BinaryOperator::parse(token, tokens) {
                         Ok(v) => ControlFlow::Continue((
                             v,
-                            position.merged(&snapshot.peek_last().unwrap().position()),
+                            position.merged(&tokens.peek_last().unwrap().position()),
                         )),
                         Err(_) => ControlFlow::Break(()),
                     }

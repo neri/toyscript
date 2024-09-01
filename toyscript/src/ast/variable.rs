@@ -4,6 +4,7 @@ use super::expression::Expression;
 use super::Identifier;
 use crate::keyword::Keyword;
 use crate::*;
+use ast::class::TypeDescriptor;
 use token::{Token, TokenStream};
 
 #[allow(dead_code)]
@@ -17,7 +18,7 @@ pub struct VariableDeclaration {
 #[derive(Debug)]
 pub struct Variable {
     identifier: Identifier,
-    type_id: Option<Identifier>,
+    type_desc: Option<TypeDescriptor>,
     assignment: Option<Expression>,
     is_mutable: bool,
 }
@@ -56,8 +57,8 @@ impl VariableDeclaration {
         loop {
             let identifier = Identifier::from_tokens(tokens)?;
 
-            let type_id = if let Ok(_) = tokens.expect_symbol(':') {
-                let var_type = expect_type(tokens)?;
+            let type_desc = if let Ok(_) = tokens.expect_symbol(':') {
+                let var_type = TypeDescriptor::expect(tokens)?;
                 Some(var_type)
             } else {
                 None
@@ -80,7 +81,7 @@ impl VariableDeclaration {
 
             variables.push(Variable {
                 identifier,
-                type_id,
+                type_desc,
                 assignment,
                 is_mutable,
             });
@@ -123,16 +124,15 @@ impl VariableDeclaration {
 
         let identifier = Identifier::from_tokens(tokens)?;
 
-        let type_id = if let Ok(_) = tokens.expect_symbol(':') {
-            let var_type = expect_type(tokens)?;
-            Some(var_type)
+        let type_desc = if let Ok(_) = tokens.expect_symbol(':') {
+            Some(TypeDescriptor::expect(tokens)?)
         } else {
             None
         };
 
         variables.push(Variable {
             identifier,
-            type_id,
+            type_desc,
             assignment: None,
             is_mutable,
         });
@@ -158,8 +158,8 @@ impl Variable {
     }
 
     #[inline]
-    pub fn type_id(&self) -> Option<&Identifier> {
-        self.type_id.as_ref()
+    pub fn type_desc(&self) -> Option<&TypeDescriptor> {
+        self.type_desc.as_ref()
     }
 
     #[inline]
