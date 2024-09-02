@@ -3,7 +3,7 @@
 pub mod ast;
 pub mod error;
 pub mod keyword;
-// pub mod types;
+pub mod types;
 
 #[cfg(test)]
 pub mod tests;
@@ -24,6 +24,7 @@ pub(crate) use alloc::{
 pub(crate) use core::{cell::RefCell, str};
 pub use error::*;
 use keyword::Keyword;
+use types::TypeSystem;
 
 use alloc::format;
 use ast::{identifier::Identifier, Ast};
@@ -53,6 +54,17 @@ impl ToyScript {
     pub fn debug_ast(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| Ast::from_tokens(tokens))
             .map(|v| format!("{:#?}", v))
+    }
+
+    pub fn debug_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+        Self::_from_src(file_name, src, |tokens| {
+            let ast = Ast::from_tokens(tokens)?;
+
+            let types = TypeSystem::new(file_name, &ast)?;
+
+            Ok(types)
+        })
+        .map(|v| format!("{:#?}", v))
     }
 }
 

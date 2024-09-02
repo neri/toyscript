@@ -13,6 +13,16 @@ fn main() {
             &[],
         );
     }
+
+    {
+        make_enum(
+            "./src/types/primitive.txt",
+            "./src/types/primitive.rs",
+            "Primitive",
+            "ToyScript Primitive Types",
+            &[],
+        );
+    }
 }
 
 fn make_enum(

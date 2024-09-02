@@ -50,8 +50,8 @@ impl Identifier {
     }
 
     #[inline]
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
+    pub fn as_string(&self) -> &String {
+        &self.identifier
     }
 
     #[inline]

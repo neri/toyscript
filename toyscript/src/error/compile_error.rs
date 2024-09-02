@@ -1,7 +1,6 @@
 use crate::{ast::identifier::Identifier, *};
 use core::cmp;
 use token::{TokenError, TokenPosition};
-// use types::TypeDescriptor;
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -203,25 +202,25 @@ impl CompileError {
         )
     }
 
-    // #[inline]
-    // pub fn type_mismatch(
-    //     exptected: &TypeDescriptor,
-    //     actual: &TypeDescriptor,
-    //     position: TokenPosition,
-    // ) -> Self {
-    //     let explanation = format!(
-    //         "Type mismatch '{}', Expected '{}'",
-    //         actual.identifier(),
-    //         exptected.identifier(),
-    //     );
-    //     Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
-    // }
+    #[inline]
+    pub fn type_mismatch(
+        exptected: &types::TypeDescriptor,
+        actual: &types::TypeDescriptor,
+        position: TokenPosition,
+    ) -> Self {
+        let explanation = format!(
+            "Type mismatch '{}', Expected '{}'",
+            actual.identifier(),
+            exptected.identifier(),
+        );
+        Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
+    }
 
-    // #[inline]
-    // pub fn literal_overflow(exptected: &TypeDescriptor, position: TokenPosition) -> Self {
-    //     let explanation = format!("Literal out of range for '{}' ", exptected.identifier(),);
-    //     Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
-    // }
+    #[inline]
+    pub fn literal_overflow(exptected: &types::TypeDescriptor, position: TokenPosition) -> Self {
+        let explanation = format!("Literal out of range for '{}' ", exptected.identifier(),);
+        Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
+    }
 
     #[inline]
     pub fn invalid_type(identifier: &Identifier) -> Self {
@@ -239,14 +238,14 @@ impl CompileError {
         Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
     }
 
-    // #[inline]
-    // pub fn return_required(exptected: &TypeDescriptor, position: TokenPosition) -> Self {
-    //     let explanation = format!(
-    //         "Requires a return value of type '{}'",
-    //         exptected.identifier(),
-    //     );
-    //     Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
-    // }
+    #[inline]
+    pub fn return_required(exptected: &types::TypeDescriptor, position: TokenPosition) -> Self {
+        let explanation = format!(
+            "Requires a return value of type '{}'",
+            exptected.identifier(),
+        );
+        Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
+    }
 
     #[inline]
     pub fn lvalue_required(position: TokenPosition) -> Self {

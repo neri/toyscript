@@ -320,4 +320,23 @@ impl TypeDescriptor {
             Self::Simple(v) => v.id_position(),
         }
     }
+
+    #[inline]
+    pub fn as_string(&self) -> &String {
+        self.identifier().as_string()
+    }
+
+    pub fn identifier(&self) -> &Identifier {
+        match self {
+            TypeDescriptor::Simple(v) => v,
+        }
+    }
+}
+
+impl Clone for TypeDescriptor {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Simple(arg0) => Self::Simple(arg0.clone()),
+        }
+    }
 }

@@ -1,3 +1,5 @@
+use super::Primitive;
+
 #[derive(Clone, Copy)]
 pub enum Integer {
     I8(i8),
