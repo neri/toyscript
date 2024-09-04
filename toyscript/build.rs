@@ -7,7 +7,7 @@ fn main() {
     {
         make_enum(
             "./src/keyword/keyword.txt",
-            "./src/keyword/keyword.rs",
+            "./src/keyword/_keyword.rs",
             "Keyword",
             "ToyScript Reserved Keywords",
             &[],
@@ -17,9 +17,19 @@ fn main() {
     {
         make_enum(
             "./src/types/primitive.txt",
-            "./src/types/primitive.rs",
+            "./src/types/_primitive.rs",
             "Primitive",
             "ToyScript Primitive Types",
+            &[],
+        );
+    }
+
+    {
+        make_enum(
+            "./src/tir/opcode.txt",
+            "./src/tir/_opcode.rs",
+            "Op",
+            "ToyScript Intermediate Representation Opcodes",
             &[],
         );
     }

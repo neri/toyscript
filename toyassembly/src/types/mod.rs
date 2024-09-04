@@ -1,7 +1,7 @@
 //! TotAssembly Types
 
-mod valtype;
-pub use valtype::*;
+mod _valtype;
+pub use _valtype::*;
 
 impl ValType {
     #[inline]

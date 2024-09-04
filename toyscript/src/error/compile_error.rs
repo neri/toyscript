@@ -1,5 +1,6 @@
 use crate::{ast::identifier::Identifier, *};
 use core::cmp;
+use tir::CodeBuildError;
 use token::{TokenError, TokenPosition};
 
 #[derive(Debug)]
@@ -107,9 +108,13 @@ impl CompileError {
     }
 
     #[inline]
-    pub fn internal_inconsistency(explanation: &str, position: TokenPosition) -> Self {
+    pub fn internal_inconsistency(explanation: &str, position: ErrorPosition) -> Self {
         let explanation = format!("Internal inconsistency: {}", explanation);
-        Self::with_position(CompileErrorKind::InternalError, position, Some(explanation))
+        Self {
+            kind: CompileErrorKind::InternalError,
+            explanation: Some(explanation),
+            position,
+        }
     }
 
     #[inline]
@@ -419,5 +424,14 @@ impl From<TokenPosition> for ErrorPosition {
     #[inline]
     fn from(value: TokenPosition) -> Self {
         ErrorPosition::Range(value)
+    }
+}
+
+impl From<CodeBuildError> for CompileError {
+    fn from(err: CodeBuildError) -> Self {
+        CompileError::internal_inconsistency(
+            &format!("Assembler Error: {:?}", err),
+            ErrorPosition::Unspecified,
+        )
     }
 }

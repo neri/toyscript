@@ -3,6 +3,7 @@
 // use super::integer::*;
 use super::Identifier;
 use crate::{keyword::Keyword, *};
+use ast::integer::Integer;
 use core::ops::ControlFlow;
 use token::{StringLiteralError, TokenPosition, TokenStream};
 
@@ -21,7 +22,7 @@ pub enum Unary {
     Identifier(Identifier),
 
     /// Numeric Literal
-    NumericLiteral(String, TokenPosition),
+    NumericLiteral(Integer, TokenPosition),
 
     /// String Literal
     StringLiteral(String, TokenPosition),
@@ -132,8 +133,10 @@ impl Expression {
                     items.push(FlatUnary::Value(Unary::Identifier(identifier)));
                 }
                 TokenType::NumericLiteral => {
-                    let s = token.source().to_string();
-                    items.push(FlatUnary::Value(Unary::NumericLiteral(s, token.position())));
+                    let v = Integer::from_str(token.source()).map_err(|_| {
+                        CompileError::invalid_literal("Invalid number", token.position())
+                    })?;
+                    items.push(FlatUnary::Value(Unary::NumericLiteral(v, token.position())));
                 }
                 TokenType::StringLiteral(_) => {
                     let str = match token.string_literal() {
@@ -362,7 +365,7 @@ impl Expression {
         if items.len() != 1 {
             return Err(CompileError::internal_inconsistency(
                 &format!("Expression value stack mismatch"),
-                base_position,
+                base_position.into(),
             ));
         }
         let item = Box::new(items[0].clone());
@@ -878,44 +881,44 @@ impl BinaryOperator {
         )
     }
 
-    // pub fn to_il(&self) -> Il {
-    //     match self {
-    //         BinaryOperator::Identical => Il::Eq,
-    //         BinaryOperator::NotIdentical => Il::Ne,
-    //         BinaryOperator::Eq => Il::Eq,
-    //         BinaryOperator::Ne => Il::Ne,
-    //         BinaryOperator::Lt => Il::Lt,
-    //         BinaryOperator::Gt => Il::Gt,
-    //         BinaryOperator::Le => Il::Le,
-    //         BinaryOperator::Ge => Il::Ge,
+    pub fn to_ir(&self) -> tir::Op {
+        match self {
+            BinaryOperator::Identical => tir::Op::Eq,
+            BinaryOperator::NotIdentical => tir::Op::Ne,
+            BinaryOperator::Eq => tir::Op::Eq,
+            BinaryOperator::Ne => tir::Op::Ne,
+            BinaryOperator::Lt => tir::Op::Lt,
+            BinaryOperator::Gt => tir::Op::Gt,
+            BinaryOperator::Le => tir::Op::Le,
+            BinaryOperator::Ge => tir::Op::Ge,
 
-    //         BinaryOperator::Add => Il::Add,
-    //         BinaryOperator::Sub => Il::Sub,
-    //         BinaryOperator::Mul => Il::Mul,
-    //         BinaryOperator::Div => Il::Div,
-    //         BinaryOperator::Rem => Il::Rem,
-    //         BinaryOperator::BitAnd => Il::BitAnd,
-    //         BinaryOperator::BitOr => Il::BitOr,
-    //         BinaryOperator::BitXor => Il::BitXor,
-    //         BinaryOperator::Shl => Il::Shl,
-    //         BinaryOperator::Shr => Il::Shr,
+            BinaryOperator::Add => tir::Op::Add,
+            BinaryOperator::Sub => tir::Op::Sub,
+            BinaryOperator::Mul => tir::Op::Mul,
+            BinaryOperator::Div => tir::Op::Div,
+            BinaryOperator::Rem => tir::Op::Rem,
+            BinaryOperator::BitAnd => tir::Op::And,
+            BinaryOperator::BitOr => tir::Op::Or,
+            BinaryOperator::BitXor => tir::Op::Xor,
+            BinaryOperator::Shl => tir::Op::Shl,
+            BinaryOperator::Shr => tir::Op::Shr,
 
-    //         BinaryOperator::Assign
-    //         | BinaryOperator::AssignAdd
-    //         | BinaryOperator::AssignSub
-    //         | BinaryOperator::AssignMul
-    //         | BinaryOperator::AssignDiv
-    //         | BinaryOperator::AssignRem
-    //         | BinaryOperator::AssignBitAnd
-    //         | BinaryOperator::AssignBitOr
-    //         | BinaryOperator::AssignBitXor
-    //         | BinaryOperator::AssignShl
-    //         | BinaryOperator::AssignShr
-    //         | BinaryOperator::LogicalAnd
-    //         | BinaryOperator::LogicalOr
-    //         | BinaryOperator::Exponentiation => unreachable!(),
-    //     }
-    // }
+            BinaryOperator::Assign
+            | BinaryOperator::AssignAdd
+            | BinaryOperator::AssignSub
+            | BinaryOperator::AssignMul
+            | BinaryOperator::AssignDiv
+            | BinaryOperator::AssignRem
+            | BinaryOperator::AssignBitAnd
+            | BinaryOperator::AssignBitOr
+            | BinaryOperator::AssignBitXor
+            | BinaryOperator::AssignShl
+            | BinaryOperator::AssignShr
+            | BinaryOperator::LogicalAnd
+            | BinaryOperator::LogicalOr
+            | BinaryOperator::Exponentiation => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

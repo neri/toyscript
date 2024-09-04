@@ -1,4 +1,4 @@
-use super::Primitive;
+use crate::types::Primitive;
 
 #[derive(Clone, Copy)]
 pub enum Integer {
@@ -213,6 +213,13 @@ impl Integer {
             Integer::U32(v) => *v == 0,
             Integer::I64(v) => *v == 0,
             Integer::U64(v) => *v == 0,
+        }
+    }
+
+    pub fn from_str(str: &str) -> Result<Self, ()> {
+        match str.parse() {
+            Ok(v) => Ok(Self::U64(v)),
+            Err(_) => Err(()),
         }
     }
 }

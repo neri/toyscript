@@ -1,8 +1,10 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod ast;
+pub mod cg;
 pub mod error;
 pub mod keyword;
+pub mod tir;
 pub mod types;
 
 #[cfg(test)]
@@ -23,15 +25,12 @@ pub(crate) use alloc::{
 #[allow(unused)]
 pub(crate) use core::{cell::RefCell, str};
 pub use error::*;
-use keyword::Keyword;
-use types::TypeSystem;
 
 use alloc::format;
 use ast::{identifier::Identifier, Ast};
-// use cg::CodeGen;
-// use namespace::NamespaceOld;
+use keyword::Keyword;
 use token::{Token, TokenStream, TokenType, Tokenizer};
-// use types::TypeSystem;
+use types::TypeSystem;
 
 pub struct ToyScript;
 
@@ -62,7 +61,9 @@ impl ToyScript {
 
             let types = TypeSystem::new(file_name, &ast)?;
 
-            Ok(types)
+            let ir_module = cg::CodeGen::generate(&ast, &types)?;
+
+            Ok(ir_module)
         })
         .map(|v| format!("{:#?}", v))
     }

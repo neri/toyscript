@@ -1,13 +1,16 @@
 //! ToyScript Type System
 
-pub mod integer;
-mod primitive;
-pub use primitive::*;
-
 use crate::*;
-use ast::statement::Statement;
-use integer::Integer;
+use ast::{integer::Integer, statement::Statement};
+use function::FunctionDescriptor;
+use index::FuncIndex;
+use keyword::ModifierFlag;
 use token::TokenPosition;
+
+mod _primitive;
+pub mod function;
+pub mod index;
+pub use _primitive::*;
 
 pub const BUILTIN_BOOL: &str = "bool";
 
@@ -33,20 +36,26 @@ pub const BUILTIN_NEVER: &str = "never";
 #[derive(Debug)]
 pub struct TypeSystem {
     name: String,
+    global_objects: BTreeMap<String, GlobalObjectIndex>,
+    functions: Vec<Arc<FunctionDescriptor>>,
+    types: BTreeMap<String, Arc<TypeDescriptor>>,
+
     integer_bits: usize,
     pointer_bits: usize,
     type_int: Primitive,
     type_uint: Primitive,
     type_isize: Primitive,
     type_usize: Primitive,
-    types: BTreeMap<String, Arc<TypeDescriptor>>,
 }
 
 impl TypeSystem {
     pub fn new(name: &str, ast: &ast::Ast) -> Result<Self, CompileError> {
         let mut system = Self {
             name: name.to_owned(),
+            global_objects: BTreeMap::new(),
             types: BTreeMap::new(),
+            functions: Vec::new(),
+
             integer_bits: 0,
             pointer_bits: 0,
             type_int: Primitive::Void,
@@ -60,7 +69,6 @@ impl TypeSystem {
             system.types.insert(desc.identifier().to_string(), desc);
         }
 
-        system.set_use(32).unwrap();
         system
             .make_primitive_alias(BUILTIN_NEVER, Primitive::Void)
             .unwrap();
@@ -70,6 +78,8 @@ impl TypeSystem {
         system
             .make_primitive_alias(BUILTIN_CHAR, Primitive::U32)
             .unwrap();
+
+        system.set_use(32).unwrap();
 
         system
             .make_reference(
@@ -141,6 +151,32 @@ impl TypeSystem {
             ));
         }
 
+        for is_import in &[true, false] {
+            for statement in ast.program() {
+                match statement {
+                    Statement::Function(func_decl) => {
+                        if *is_import == func_decl.modifiers().contains(ModifierFlag::IMPORT) {
+                            let func = FunctionDescriptor::parse(
+                                func_decl,
+                                &system,
+                                FuncIndex(system.functions.len() as u32),
+                            )?;
+                            if system.global_object(func.identifier().as_str()).is_none() {
+                                system.global_objects.insert(
+                                    func.identifier().as_string().clone(),
+                                    GlobalObjectIndex::Funtion(func.function_index()),
+                                );
+                                system.functions.push(Arc::new(func));
+                            } else {
+                                return Err(CompileError::duplicate_identifier(func.identifier()));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         Ok(system)
     }
 
@@ -167,6 +203,11 @@ impl TypeSystem {
     #[inline]
     pub fn get(&self, identifier: &str) -> Option<&Arc<TypeDescriptor>> {
         self.types.get(identifier)
+    }
+
+    #[inline]
+    pub fn from_ast(&self, ast_type: &ast::class::TypeDescriptor) -> Option<&Arc<TypeDescriptor>> {
+        self.get(&ast_type.as_string())
     }
 
     #[inline]
@@ -277,7 +318,7 @@ impl TypeSystem {
         if self.get(identifier.as_str()).is_some() {
             return Err(CompileError::duplicate_identifier(identifier));
         }
-        if let Some(desc) = self.get(&type_desc.as_string()) {
+        if let Some(desc) = self.from_ast(type_desc) {
             if desc.is_special() {
                 return Err(CompileError::invalid_type(&type_desc.identifier()));
             }
@@ -395,6 +436,17 @@ impl TypeSystem {
     pub fn canonical_opt(&self, ty: Option<Arc<TypeDescriptor>>) -> Option<Arc<TypeDescriptor>> {
         ty.filter(|v| !v.is_void())
     }
+
+    pub fn global_object(&self, identifier: &str) -> Option<GlobalObjectIndex> {
+        self.global_objects.get(&identifier.to_string()).map(|v| *v)
+    }
+
+    pub fn function(&self, identifier: &str) -> Option<&Arc<FunctionDescriptor>> {
+        let funcidx = match self.global_object(identifier)? {
+            GlobalObjectIndex::Funtion(v) => v,
+        };
+        self.functions.get(funcidx.as_usize())
+    }
 }
 
 pub trait Resolve<T: ?Sized> {
@@ -469,15 +521,6 @@ impl Primitive {
 pub struct TypeDescriptor {
     identifier: String,
     kind: TypeKind,
-}
-
-#[derive(Debug)]
-pub enum TypeKind {
-    Primitive(Primitive),
-    Alias(Arc<TypeDescriptor>),
-    Reference(Arc<TypeDescriptor>),
-    //Class(T),
-    //Function(T),
 }
 
 impl TypeDescriptor {
@@ -594,6 +637,27 @@ impl PartialEq for TypeDescriptor {
     }
 }
 
+pub enum TypeKind {
+    Primitive(Primitive),
+    Alias(Arc<TypeDescriptor>),
+    Reference(Arc<TypeDescriptor>),
+    //Class(T),
+    //Function(T),
+}
+
+impl core::fmt::Debug for TypeKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Primitive(arg0) => f.debug_tuple("Primitive").field(arg0).finish(),
+            Self::Alias(arg0) => f.debug_tuple("Alias").field(&arg0.identifier()).finish(),
+            Self::Reference(arg0) => f
+                .debug_tuple("Reference")
+                .field(&arg0.identifier())
+                .finish(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum InferredType {
     Unknown,
@@ -627,4 +691,9 @@ impl InferredType {
             InferredType::Unknown => None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlobalObjectIndex {
+    Funtion(FuncIndex),
 }

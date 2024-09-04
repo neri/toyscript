@@ -37,6 +37,9 @@ pub enum Statement {
     /// `if` expr `{` block `}` [[`else` `if` `{` block `}`]... `else` `{` block `}`]
     IfStatement(Vec<IfType>),
 
+    /// `for` expr `{` block `}`
+    ForStatement(Expression, Block),
+
     /// `while` expr `{` block `}`
     WhileStatement(Expression, Block),
 
@@ -92,6 +95,19 @@ impl Statement {
                                 EnumDeclaration::parse(modifiers.as_slice(), token, tokens)?;
                             return Ok(Self::Enum(enum_decl));
                         }
+                        Keyword::For => {
+                            if !modifiers.is_empty() {
+                                return Err(CompileError::unexpected_token(&token));
+                            }
+
+                            // TODO:
+                            let expr = Expression::parse(tokens, &[TokenType::Symbol('{')])?;
+
+                            let begin_block = expect_symbol(tokens, '{')?;
+                            let block = Block::parse(begin_block, tokens)?;
+                            return Ok(Self::ForStatement(expr, block));
+                        }
+
                         Keyword::Declare => {
                             let kind = tokens.next_non_blank();
                             match kind.token_type() {

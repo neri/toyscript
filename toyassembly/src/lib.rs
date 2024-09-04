@@ -13,7 +13,7 @@ pub mod ir;
 pub mod token;
 pub mod types;
 
-#[path = "keyword/keyword.rs"]
+#[path = "keyword/_keyword.rs"]
 pub mod keyword;
 
 #[allow(unused)]

@@ -1,7 +1,7 @@
 //! ToyScript Reserved Keywords
 
-mod keyword;
-pub use keyword::*;
+mod _keyword;
+pub use _keyword::*;
 
 impl Keyword {
     pub fn modifiers() -> &'static [Self] {

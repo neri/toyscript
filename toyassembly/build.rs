@@ -8,7 +8,7 @@ fn main() {
     {
         make_enum(
             "./src/types/valtype.txt",
-            "./src/types/valtype.rs",
+            "./src/types/_valtype.rs",
             "ValType",
             "ToyAssembly Value Types",
             &[],
@@ -28,7 +28,7 @@ fn main() {
 
         make_enum(
             "./src/keyword/keyword.txt",
-            "./src/keyword/keyword.rs",
+            "./src/keyword/_keyword.rs",
             "Keyword",
             "ToyAssembly Reserved Keywords",
             &opcodes,
