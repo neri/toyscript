@@ -5,14 +5,19 @@ nop
 block
 loop
 end
-return
+
 br
 br_if
+
+return
 call
+
 drop
 
 i32.const
 i64.const
+f32.const
+f64.const
 
 local.get
 local.set

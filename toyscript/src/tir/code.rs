@@ -1,10 +1,16 @@
+//! ToyScript Intermediate Representation Code Builder
+
+use opt::CodeOptimizer;
+
 use super::*;
 use crate::types::index::LocalIndex;
-use core::{mem::transmute, sync::atomic::AtomicU32};
-use leb128::{Leb128Reader, Leb128Writer, ReadLeb128, WriteLeb128};
+use core::{
+    mem::transmute,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 pub struct CodeBuilder {
-    writer: Leb128Writer,
+    buf: Vec<u32>,
     ssa_index: AtomicU32,
     value_stack: Vec<SsaIndex>,
     block_stack: Vec<(BlockIndex, usize)>,
@@ -17,6 +23,7 @@ pub enum CodeBuildError {
     OutOfValueStack,
     InvalidBlockStack,
     InvalidValueStack,
+    InvalidBranchTarget,
 }
 
 pub struct CodeStream<'a> {
@@ -28,7 +35,7 @@ impl CodeBuilder {
     #[inline]
     pub fn new() -> Self {
         Self {
-            writer: Leb128Writer::new(),
+            buf: Default::default(),
             ssa_index: AtomicU32::new(0),
             value_stack: Default::default(),
             block_stack: Default::default(),
@@ -45,7 +52,10 @@ impl CodeBuilder {
 
     #[inline]
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = CodeFragment> + 'a {
-        CodeStreamIter(Leb128Reader::from_slice(self.writer.as_slice()))
+        CodeStreamIter {
+            buf: self.buf.as_slice(),
+            index: 0,
+        }
     }
 
     pub fn finalize(self) -> Result<Self, CodeBuildError> {
@@ -55,33 +65,58 @@ impl CodeBuilder {
         if self.value_stack.len() != 0 {
             return Err(CodeBuildError::InvalidValueStack);
         }
-        Ok(self)
+
+        let Self {
+            buf,
+            ssa_index,
+            value_stack: _,
+            block_stack: _,
+        } = self;
+
+        let buf = CodeOptimizer::optimize(buf).unwrap();
+
+        Ok(Self {
+            buf,
+            ssa_index,
+            value_stack: Vec::new(),
+            block_stack: Vec::new(),
+        })
     }
 }
 
 impl CodeStream<'_> {
     #[inline]
-    pub fn next_index(&self) -> SsaIndex {
-        SsaIndex(
-            self.codes
-                .ssa_index
-                .fetch_add(1, core::sync::atomic::Ordering::SeqCst),
-        )
+    pub fn current_index(&self) -> SsaIndex {
+        SsaIndex(self.codes.ssa_index.load(Ordering::Relaxed))
     }
 
     fn emit(&mut self, op: Op, operands: &[Operand]) {
-        self.codes.writer.write(operands.len() + 1).unwrap();
-        self.codes.writer.write(op as usize).unwrap();
+        let mut buf = Vec::new();
         for operand in operands {
             match operand {
-                Operand::SsaIndex(v) => self.codes.writer.write(v.0).unwrap(),
-                Operand::Byte(v) => self.codes.writer.write_byte(*v).unwrap(),
-                Operand::I32(v) => self.codes.writer.write(*v).unwrap(),
-                Operand::U32(v) => self.codes.writer.write(*v).unwrap(),
-                Operand::I64(v) => self.codes.writer.write(*v).unwrap(),
-                Operand::U64(v) => self.codes.writer.write(*v).unwrap(),
+                Operand::SsaIndex(v) => buf.push(v.0),
+                Operand::I32(v) => buf.push(*v as u32),
+                Operand::U32(v) => buf.push(*v as u32),
+                Operand::I64(v) => {
+                    let u = *v as u64;
+                    buf.push(u as u32);
+                    buf.push((u >> 32) as u32);
+                }
+                Operand::U64(v) => {
+                    let u = *v as u64;
+                    buf.push(u as u32);
+                    buf.push((u >> 32) as u32);
+                }
             }
         }
+        self.codes
+            .buf
+            .push((buf.len() as u32 + 1) << 16 | op as u32);
+        self.codes.buf.extend(&buf);
+
+        self.codes
+            .ssa_index
+            .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
     }
 
     #[inline]
@@ -105,7 +140,7 @@ impl CodeStream<'_> {
     pub fn emit_binop(&mut self, op: Op) -> Result<(), CodeBuildError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
-        let result = self.next_index();
+        let result = self.current_index();
         self.push(result);
         self.emit(op, &[result.into(), lhs.into(), rhs.into()]);
         Ok(())
@@ -114,7 +149,7 @@ impl CodeStream<'_> {
     #[inline]
     pub fn emit_unop(&mut self, op: Op) -> Result<(), CodeBuildError> {
         let operand = self.pop()?;
-        let result = self.next_index();
+        let result = self.current_index();
         self.push(result);
         self.emit(op, &[result.into(), operand.into()]);
         Ok(())
@@ -131,7 +166,7 @@ impl CodeStream<'_> {
     }
 
     fn begin_block(&mut self, op: Op) -> BlockIndex {
-        let block = self.next_index();
+        let block = self.current_index();
         self.codes
             .block_stack
             .push((BlockIndex(block.0), self.base_stack_level));
@@ -140,41 +175,65 @@ impl CodeStream<'_> {
         BlockIndex(block.0)
     }
 
-    pub fn ir_end(&mut self, block_index: BlockIndex) -> Result<(), CodeBuildError> {
-        let (test_block_index, stack_level) = self
+    pub fn ir_end(&mut self, index: BlockIndex) -> Result<(), CodeBuildError> {
+        let (test_index, stack_level) = self
             .codes
             .block_stack
             .pop()
             .ok_or(CodeBuildError::OutOfBlockStack)?;
-        if test_block_index != block_index {
+        if test_index != index {
             return Err(CodeBuildError::InvalidBlockStack);
         }
         self.base_stack_level = stack_level;
-        self.emit(Op::End, &[block_index.0.into()]);
+        self.emit(Op::End, &[index.0.into()]);
         Ok(())
     }
 
     #[inline]
+    pub fn ir_bool_const(&mut self, value: bool) {
+        self.ir_i32_const(value as i32)
+    }
+
+    #[inline]
     pub fn ir_i32_const(&mut self, value: i32) {
-        let result = self.next_index();
+        let result = self.current_index();
         self.push(result);
         self.emit(Op::I32Const, &[result.into(), value.into()]);
     }
 
     #[inline]
     pub fn ir_i64_const(&mut self, value: i64) {
-        let result = self.next_index();
+        let result = self.current_index();
         self.push(result);
         self.emit(Op::I64Const, &[result.into(), value.into()]);
     }
 
     #[inline]
-    pub fn ir_br(&mut self, target: BlockIndex) {
+    pub fn ir_br(&mut self, target: BlockIndex) -> Result<(), CodeBuildError> {
+        if self
+            .codes
+            .block_stack
+            .iter()
+            .find(|v| v.0 == target)
+            .is_none()
+        {
+            return Err(CodeBuildError::InvalidBranchTarget);
+        }
         self.emit(Op::Br, &[Operand::U32(target.0)]);
+        Ok(())
     }
 
     #[inline]
     pub fn ir_br_if(&mut self, target: BlockIndex) -> Result<(), CodeBuildError> {
+        if self
+            .codes
+            .block_stack
+            .iter()
+            .find(|v| v.0 == target)
+            .is_none()
+        {
+            return Err(CodeBuildError::InvalidBranchTarget);
+        }
         let cc = self.pop()?;
         self.emit(Op::BrIf, &[Operand::U32(target.0), cc.into()]);
         Ok(())
@@ -182,7 +241,7 @@ impl CodeStream<'_> {
 
     #[inline]
     pub fn ir_local_get(&mut self, localidx: LocalIndex) {
-        let result = self.next_index();
+        let result = self.current_index();
         self.push(result);
         self.emit(Op::LocalGet, &[result.into(), Operand::U32(localidx.get())]);
     }
@@ -196,12 +255,16 @@ impl CodeStream<'_> {
 
     #[inline]
     pub fn ir_local_tee(&mut self, localidx: LocalIndex) -> Result<(), CodeBuildError> {
-        let operand = self.pop()?;
-        let result = self.next_index();
+        let result = self.current_index();
+        let ssa_index = self.pop()?;
         self.push(result);
         self.emit(
-            Op::LocalGet,
-            &[result.into(), Operand::U32(localidx.get()), operand.into()],
+            Op::LocalTee,
+            &[
+                result.into(),
+                Operand::U32(localidx.get()),
+                ssa_index.into(),
+            ],
         );
         Ok(())
     }
@@ -222,7 +285,7 @@ impl CodeStream<'_> {
         for _ in 0..params_len {
             params.push(Operand::from(self.pop()?));
         }
-        let result = self.next_index();
+        let result = self.current_index();
         params.push(Operand::U32(target as u32));
         params.push(result.into());
         params.reverse();
@@ -250,23 +313,34 @@ impl core::fmt::Debug for CodeBuilder {
     }
 }
 
-struct CodeStreamIter<'a>(Leb128Reader<'a>);
+struct CodeStreamIter<'a> {
+    buf: &'a [u32],
+    index: usize,
+}
 
 impl<'a> Iterator for CodeStreamIter<'a> {
     type Item = CodeFragment;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let count: usize = self.0.read().ok()?;
-        if count > 0 {
-            let opcode: usize = self.0.read().ok()?;
-            let opcode = unsafe { transmute::<u8, Op>(opcode as u8) };
-            let mut params = Vec::with_capacity(count);
-            for _ in 1..count {
-                params.push(self.0.read().ok()?);
+        loop {
+            let len_opc = self.buf.get(self.index)?;
+            self.index += 1;
+            let len = (len_opc >> 16) as usize;
+            if len > 0 {
+                let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
+                if opcode == Op::Nop {
+                    self.index += len - 1;
+                    continue;
+                }
+                let mut params = Vec::with_capacity(len);
+                for _ in 1..len {
+                    params.push(*self.buf.get(self.index)?);
+                    self.index += 1;
+                }
+                return Some(CodeFragment { opcode, params });
+            } else {
+                return None;
             }
-            Some(CodeFragment { opcode, params })
-        } else {
-            None
         }
     }
 }
@@ -274,7 +348,6 @@ impl<'a> Iterator for CodeStreamIter<'a> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Operand {
     SsaIndex(SsaIndex),
-    Byte(u8),
     I32(i32),
     U32(u32),
     I64(i64),
@@ -285,6 +358,13 @@ impl From<SsaIndex> for Operand {
     #[inline]
     fn from(value: SsaIndex) -> Self {
         Self::SsaIndex(value)
+    }
+}
+
+impl From<bool> for Operand {
+    #[inline]
+    fn from(value: bool) -> Self {
+        Self::I32(value as i32)
     }
 }
 
@@ -318,7 +398,7 @@ impl From<u64> for Operand {
 
 pub struct CodeFragment {
     opcode: Op,
-    params: Vec<usize>,
+    params: Vec<u32>,
 }
 
 impl core::fmt::Debug for CodeFragment {

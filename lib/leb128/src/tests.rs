@@ -117,6 +117,14 @@ fn leb128_writer() {
     writer.clear();
     writer.write(-559038737i64).unwrap();
     assert_eq!(writer.as_slice(), &[0xEF, 0xFD, 0xB6, 0xF5, 0x7D]);
+
+    writer.clear();
+    writer.write(0x8000_0000u32).unwrap();
+    assert_eq!(writer.as_slice(), &[0x80, 0x80, 0x80, 0x80, 0x08]);
+
+    writer.clear();
+    writer.write(-0x8000_0000i32).unwrap();
+    assert_eq!(writer.as_slice(), &[0x80, 0x80, 0x80, 0x80, 0x78]);
 }
 
 #[test]

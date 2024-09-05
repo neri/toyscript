@@ -5,7 +5,7 @@ use crate::types::Primitive;
 #[allow(unused)]
 pub struct Function {
     signature: String,
-    identifier: Option<String>,
+    exports: Option<String>,
     params: Vec<Primitive>,
     results: Vec<Primitive>,
     locals: Vec<Primitive>,
@@ -16,7 +16,7 @@ impl Function {
     #[inline]
     pub fn new(
         signature: &str,
-        identifier: Option<&str>,
+        exports: Option<&str>,
         params: &[Primitive],
         results: &[Primitive],
         locals: &[Primitive],
@@ -24,7 +24,7 @@ impl Function {
     ) -> Self {
         Self {
             signature: signature.to_owned(),
-            identifier: identifier.map(|v| v.to_owned()),
+            exports: exports.map(|v| v.to_owned()),
             params: params.to_vec(),
             results: results.to_vec(),
             locals: locals.to_vec(),

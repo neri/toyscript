@@ -34,6 +34,10 @@ pub enum Op {
     Eq,
     /// "eqz"
     Eqz,
+    /// "f32.const"
+    F32Const,
+    /// "f64.const"
+    F64Const,
     /// "ge"
     Ge,
     /// "gt"
@@ -105,6 +109,8 @@ impl Op {
             Self::End,
             Self::Eq,
             Self::Eqz,
+            Self::F32Const,
+            Self::F64Const,
             Self::Ge,
             Self::Gt,
             Self::I32Const,
@@ -150,6 +156,8 @@ impl Op {
             "end" => Some(Self::End),
             "eq" => Some(Self::Eq),
             "eqz" => Some(Self::Eqz),
+            "f32.const" => Some(Self::F32Const),
+            "f64.const" => Some(Self::F64Const),
             "ge" => Some(Self::Ge),
             "gt" => Some(Self::Gt),
             "i32.const" => Some(Self::I32Const),
@@ -196,6 +204,8 @@ impl Op {
             Self::End => "end",
             Self::Eq => "eq",
             Self::Eqz => "eqz",
+            Self::F32Const => "f32.const",
+            Self::F64Const => "f64.const",
             Self::Ge => "ge",
             Self::Gt => "gt",
             Self::I32Const => "i32.const",

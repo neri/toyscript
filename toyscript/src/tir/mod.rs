@@ -8,6 +8,7 @@ pub use _opcode::*;
 pub use code::*;
 pub use function::*;
 pub use module::*;
+pub mod opt;
 
 #[allow(unused)]
 use alloc::{

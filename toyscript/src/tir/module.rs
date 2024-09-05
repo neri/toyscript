@@ -2,15 +2,22 @@ use super::*;
 
 #[derive(Debug)]
 pub struct Module {
+    name: String,
     functions: Vec<Function>,
 }
 
 impl Module {
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
+            name: name.to_owned(),
             functions: Vec::new(),
         }
+    }
+
+    #[inline]
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     #[inline]

@@ -2,10 +2,7 @@
 
 pub mod scope;
 
-use crate::{
-    tir::{CodeBuilder, CodeStream},
-    *,
-};
+use crate::*;
 use ast::{
     block::Block,
     expression::{BinaryOperator, Expression, Unary, UnaryOperator},
@@ -22,7 +19,7 @@ pub struct CodeGen;
 
 impl CodeGen {
     pub fn generate(ast: &Ast, types: &TypeSystem) -> Result<tir::Module, CompileError> {
-        let mut module = tir::Module::new();
+        let mut module = tir::Module::new(types.name());
 
         for statement in ast.program() {
             match statement {
@@ -51,7 +48,7 @@ impl CodeGen {
                 | Statement::WhileStatement(_, _)
                 | Statement::Enum(_)
                 | Statement::ForStatement(_, _) => {
-                    return Err(CompileError::without_context(
+                    return Err(CompileError::out_of_context(
                         format!("{:#?}", statement).as_str(),
                         TokenPosition::empty(),
                     ))
@@ -72,15 +69,15 @@ impl CodeGen {
 
         for (param, type_desc) in func_decl.parameters().iter().zip(func_desc.param_types()) {
             let var = VariableDescriptor::from_parameter(param, type_desc);
-            scope.declare_local(var).unwrap();
+            scope.declare_local(var)?;
         }
 
         let return_type = func_desc.result_type().clone();
 
         let codes = if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
-            CodeBuilder::new()
+            tir::CodeBuilder::new()
         } else {
-            let mut codes = CodeBuilder::new();
+            let mut codes = tir::CodeBuilder::new();
             let block_type = Self::process_block(
                 &mut codes.stream(),
                 func_decl.body(),
@@ -110,7 +107,7 @@ impl CodeGen {
         };
 
         let signature = func_desc.signature();
-        let identifier = (func_desc.modifiers().contains(ModifierFlag::EXPORT))
+        let exports = (func_desc.modifiers().contains(ModifierFlag::EXPORT))
             .then(|| func_desc.identifier().as_str());
 
         let mut params = Vec::new();
@@ -138,7 +135,7 @@ impl CodeGen {
 
         let function = tir::Function::new(
             signature,
-            identifier,
+            exports,
             params.as_slice(),
             &[types.resolve_primitive(return_type.identifier()).unwrap()],
             locals.as_slice(),
@@ -149,7 +146,7 @@ impl CodeGen {
     }
 
     fn process_block(
-        codes: &mut CodeStream,
+        codes: &mut tir::CodeStream,
         block: &Block,
         scope: &mut VariableScope,
         return_type: &Arc<TypeDescriptor>,
@@ -248,7 +245,7 @@ impl CodeGen {
                                     Self::process_block(codes, block, &mut scope, return_type)?;
 
                                 if let Some(this_block) = this_block {
-                                    codes.ir_br(outer_block_index);
+                                    codes.ir_br(outer_block_index)?;
                                     codes.ir_end(this_block)?;
                                 }
 
@@ -276,7 +273,7 @@ impl CodeGen {
 
                                 let child_block_type =
                                     Self::process_block(codes, block, &mut scope, return_type)?;
-                                codes.ir_br(outer_block_index);
+                                codes.ir_br(outer_block_index)?;
                                 codes.ir_end(this_block)?;
 
                                 if !child_block_type.map(|v| v.is_never()).unwrap_or(false) {
@@ -306,14 +303,14 @@ impl CodeGen {
                 Statement::WhileStatement(expr, block) => {
                     let break_index = codes.ir_block();
                     let loop_index = codes.ir_loop();
-
                     let mut scope = scope.scoped();
+
                     Self::process_expression(codes, expr, Some(&builtin_bool), &mut scope, true)?;
                     codes.ir_br_if(break_index)?;
 
                     Self::process_block(codes, block, &mut scope, return_type)?;
 
-                    codes.ir_br(loop_index);
+                    codes.ir_br(loop_index)?;
                     codes.ir_end(loop_index)?;
                     codes.ir_end(break_index)?;
                 }
@@ -334,16 +331,9 @@ impl CodeGen {
                 }
 
                 Statement::ReturnStatement(expr) => {
-                    let expr_type = Self::process_expression(codes, expr, None, scope, false)?
-                        .unwrap_or(scope.types().builtin_void());
-
-                    if *return_type != expr_type {
-                        return Err(CompileError::type_mismatch(
-                            return_type,
-                            &expr_type,
-                            expr.position(),
-                        ));
-                    }
+                    let expr_type =
+                        Self::process_expression(codes, expr, Some(&return_type), scope, false)?
+                            .unwrap_or(scope.types().builtin_void());
 
                     codes.ir_return(if expr_type.is_special() { 0 } else { 1 })?;
 
@@ -355,7 +345,7 @@ impl CodeGen {
                 | Statement::TypeAlias(_, _)
                 | Statement::Function(_)
                 | &Statement::Class(_) => {
-                    return Err(CompileError::without_context(
+                    return Err(CompileError::out_of_context(
                         format!("{:#?}", statement).as_str(),
                         TokenPosition::empty(),
                     ))
@@ -372,7 +362,7 @@ impl CodeGen {
     }
 
     fn process_expression(
-        codes: &mut CodeStream,
+        codes: &mut tir::CodeStream,
         expr: &Expression,
         expected_type: Option<&Arc<TypeDescriptor>>,
         scope: &VariableScope,
@@ -546,7 +536,7 @@ impl CodeGen {
                 }
             },
 
-            Unary::Invoke(callee, _) => {
+            Unary::Invoke(callee, _args) => {
                 let identifier = match **callee {
                     Unary::Identifier(ref v) => Ok(v),
                     _ => Err(CompileError::todo(None, callee.position())),
@@ -586,10 +576,10 @@ impl CodeGen {
     }
 
     fn generate_unary(
-        codes: &mut CodeStream,
+        codes: &mut tir::CodeStream,
         item: &Unary,
         scope: &VariableScope,
-        is_inverted_bool: bool,
+        is_inverted: bool,
     ) -> Result<(), CompileError> {
         match item {
             Unary::Void(_) => (),
@@ -600,13 +590,13 @@ impl CodeGen {
                     .ok_or(CompileError::identifier_not_found(&identifier))?;
                 codes.ir_local_get(var_idx);
 
-                if is_inverted_bool {
+                if is_inverted {
                     codes.ir_not()?;
                 }
             }
 
             Unary::Parenthesis(expr) => {
-                Self::generate_unary(codes, expr.item(), scope, is_inverted_bool)?;
+                Self::generate_unary(codes, expr.item(), scope, is_inverted)?;
             }
 
             Unary::Unary(op, position, ref value) => match op {
@@ -620,10 +610,7 @@ impl CodeGen {
                 }
 
                 UnaryOperator::LogicalNot | UnaryOperator::BitNot => {
-                    Self::generate_unary(codes, value, scope, !is_inverted_bool)?;
-                    // if !is_inverted_bool {
-                    //     codes.ir_not()?;
-                    // }
+                    Self::generate_unary(codes, value, scope, !is_inverted)?;
                 }
 
                 UnaryOperator::PreIncrement | UnaryOperator::PreDecrement => {
@@ -694,7 +681,7 @@ impl CodeGen {
                     Self::generate_unary(codes, lhs, scope, false)?;
                     Self::generate_unary(codes, rhs, scope, false)?;
 
-                    let ir = if is_inverted_bool {
+                    let ir = if is_inverted {
                         match op.to_ir() {
                             tir::Op::Eq => tir::Op::Ne,
                             tir::Op::Ne => tir::Op::Eq,
@@ -724,6 +711,10 @@ impl CodeGen {
                     Self::generate_unary(codes, lhs, scope, false)?;
                     Self::generate_unary(codes, rhs, scope, false)?;
                     codes.emit_binop(op.to_ir())?;
+
+                    if is_inverted {
+                        codes.ir_not()?;
+                    }
                 }
 
                 BinaryOperator::Assign
@@ -777,7 +768,7 @@ impl CodeGen {
                     }
                     codes.ir_local_tee(var_idx)?;
 
-                    if is_inverted_bool {
+                    if is_inverted {
                         codes.ir_not()?;
                     }
                 }
@@ -793,20 +784,8 @@ impl CodeGen {
 
             Unary::Constant(constant, _position) => {
                 match constant {
-                    Keyword::True => {
-                        if is_inverted_bool {
-                            codes.ir_i32_const(0)
-                        } else {
-                            codes.ir_i32_const(1)
-                        }
-                    }
-                    Keyword::False => {
-                        if is_inverted_bool {
-                            codes.ir_i32_const(1)
-                        } else {
-                            codes.ir_i32_const(0)
-                        }
-                    }
+                    Keyword::True => codes.ir_bool_const(!is_inverted),
+                    Keyword::False => codes.ir_bool_const(is_inverted),
                     _ => {
                         return Err(CompileError::todo(
                             Some(format!("The constant '{:?}' is not supported", constant)),
@@ -876,13 +855,7 @@ impl CodeGen {
                     },
                 )?;
 
-                if scope
-                    .types()
-                    .resolve_primitive(func_desc.result_type())
-                    .map(|v| v == Primitive::Bool)
-                    .unwrap_or(false)
-                    && is_inverted_bool
-                {
+                if is_inverted {
                     codes.ir_not()?;
                 }
             }

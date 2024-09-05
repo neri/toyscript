@@ -355,8 +355,7 @@ impl TypeSystem {
         T: Iterator<Item = &'a TypeDescriptor>,
     {
         format!(
-            "_Z{}{}{}{}",
-            identifier.len(),
+            "${}@{}:{}",
             identifier,
             param_types.map(|v| v.mangled()).collect::<String>(),
             result_type.mangled(),
@@ -400,7 +399,7 @@ impl TypeSystem {
             (InferredType::Unknown, InferredType::Maybe(rt)) => {
                 *lhs = InferredType::Maybe(rt.clone());
             }
-            _ => (),
+            _ => {}
         }
         Ok(())
     }
@@ -411,24 +410,36 @@ impl TypeSystem {
         inferred_to: &InferredType,
         position: TokenPosition,
     ) -> Result<(Integer, InferredType), CompileError> {
-        if let Some(inferred_to) = inferred_to.pessimistic_type() {
-            if let Some(primitive) = inferred_to.primitive_type() {
-                match value.try_convert_to(primitive) {
-                    Ok(v) => return Ok((v, InferredType::Inferred(inferred_to.clone()))),
-                    Err(_) => return Err(CompileError::literal_overflow(&inferred_to, position)),
+        match inferred_to {
+            InferredType::Inferred(inferred_to) => {
+                if let Some(primitive) = inferred_to.primitive_type() {
+                    match value.try_convert_to(primitive) {
+                        Ok(v) => return Ok((v, InferredType::Inferred(inferred_to.clone()))),
+                        Err(_) => {
+                            return Err(CompileError::literal_overflow(&inferred_to, position))
+                        }
+                    }
                 }
+                Err(CompileError::type_mismatch(
+                    &inferred_to,
+                    &self.primitive_type(value.primitive_type()),
+                    position,
+                ))
             }
-            Err(CompileError::type_mismatch(
-                &inferred_to,
-                &self.primitive_type(value.primitive_type()),
-                position,
-            ))
-        } else {
-            self.infer_integer(
-                &value,
-                &InferredType::Inferred(self.builtin_int()),
-                position,
-            )
+            InferredType::Maybe(inferred_to) => {
+                if let Some(primitive) = inferred_to.primitive_type() {
+                    match value.try_convert_to(primitive) {
+                        Ok(v) => return Ok((v, InferredType::Maybe(inferred_to.clone()))),
+                        Err(_) => {
+                            return Err(CompileError::literal_overflow(&inferred_to, position))
+                        }
+                    }
+                }
+                Ok((value.clone(), InferredType::Maybe(inferred_to.clone())))
+            }
+            InferredType::Unknown => {
+                self.infer_integer(&value, &InferredType::Maybe(self.builtin_int()), position)
+            }
         }
     }
 

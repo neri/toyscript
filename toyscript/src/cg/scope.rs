@@ -33,7 +33,7 @@ impl VariableStorage<'_> {
 
     #[inline]
     pub fn root_scope<'a>(&'a self) -> VariableScope<'a> {
-        VariableScope::new(self)
+        VariableScope::root(self)
     }
 
     pub fn register_local(&self, mut var_desc: VariableDescriptor) -> LocalIndex {
@@ -66,7 +66,7 @@ impl VariableStorage<'_> {
 
 impl<'a> VariableScope<'a> {
     #[inline]
-    pub fn new(storage: &'a VariableStorage) -> Self {
+    pub fn root(storage: &'a VariableStorage) -> Self {
         Self {
             storage,
             parent: None,
@@ -100,8 +100,7 @@ impl VariableScope<'_> {
         self.storage
     }
 
-    #[inline]
-    pub fn get_local(&self, identifier: &str) -> Option<LocalIndex> {
+    fn get_local(&self, identifier: &str) -> Option<LocalIndex> {
         self.variables
             .iter()
             .find(|v| v.0 == identifier)

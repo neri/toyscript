@@ -1,6 +1,6 @@
 use crate::{ast::identifier::Identifier, *};
 use core::cmp;
-use tir::CodeBuildError;
+use tir::{opt::OptimizeError, CodeBuildError};
 use token::{TokenError, TokenPosition};
 
 #[derive(Debug)]
@@ -157,8 +157,11 @@ impl CompileError {
     }
 
     #[inline]
-    pub fn without_context(explanation: &str, position: TokenPosition) -> Self {
-        let explanation = format!("Without Context: {}", explanation);
+    pub fn out_of_context(explanation: &str, position: TokenPosition) -> Self {
+        let explanation = format!(
+            "This statement cannot be used in the current context: {}",
+            explanation
+        );
         Self::with_position(CompileErrorKind::SyntaxError, position, Some(explanation))
     }
 
@@ -431,6 +434,15 @@ impl From<CodeBuildError> for CompileError {
     fn from(err: CodeBuildError) -> Self {
         CompileError::internal_inconsistency(
             &format!("Assembler Error: {:?}", err),
+            ErrorPosition::Unspecified,
+        )
+    }
+}
+
+impl From<OptimizeError> for CompileError {
+    fn from(err: OptimizeError) -> Self {
+        CompileError::internal_inconsistency(
+            &format!("Code Optimization Error: {:?}", err),
             ErrorPosition::Unspecified,
         )
     }
