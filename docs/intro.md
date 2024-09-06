@@ -22,7 +22,9 @@ export function add(a: int, b: int): int {
 ### function statement
 
 ```
-['export'] 'function' identifier '(' [identifier ':' type (',' identifier ':' type )* [','] ] ')' [':' type] '{' expr '}'
+['export'] 'function' identifier '('
+[identifier ':' type (',' identifier ':' type)* [','] ]
+')' [':' type] '{' expr '}'
 ```
 
 ### if-else statement
@@ -36,7 +38,7 @@ export function add(a: int, b: int): int {
 ### return statement
 
 ```
-'return' expr
+'return' [expr]
 ```
 
 ### switch statement
