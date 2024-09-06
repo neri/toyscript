@@ -1,11 +1,11 @@
-//! ToyScript Intermediate Representation
+//! ToyIR: ToyScript Intermediate Representation
 
 mod _opcode;
-mod code;
+mod asm;
 mod function;
 mod module;
 pub use _opcode::*;
-pub use code::*;
+pub use asm::*;
 pub use function::*;
 pub use module::*;
 pub mod opt;

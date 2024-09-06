@@ -75,9 +75,9 @@ impl CodeGen {
         let return_type = func_desc.result_type().clone();
 
         let codes = if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
-            tir::CodeBuilder::new()
+            tir::Assembler::new()
         } else {
-            let mut codes = tir::CodeBuilder::new();
+            let mut codes = tir::Assembler::new();
             let block_type = Self::process_block(
                 &mut codes.stream(),
                 func_decl.body(),
@@ -180,7 +180,7 @@ impl CodeGen {
                         if let Some(expr) = var_decl.assignment() {
                             let expr_position = expr.position();
                             let expr_type =
-                                Self::process_expression(codes, expr, expected_type, scope, false)?;
+                                Self::process_expression(codes, expr, expected_type, scope)?;
 
                             if let Some(ref expr_type) = expr_type {
                                 var_desc.infer(expr_type, expr_position)?;
@@ -225,8 +225,9 @@ impl CodeGen {
                                     expr,
                                     Some(&builtin_bool),
                                     &mut scope,
-                                    true,
                                 )?;
+                                codes.ir_invert()?;
+
                                 let this_block = if else_exists {
                                     let this_block = block_indexes.pop().ok_or(
                                         CompileError::internal_inconsistency(
@@ -261,8 +262,9 @@ impl CodeGen {
                                     expr,
                                     Some(&builtin_bool),
                                     &mut scope,
-                                    true,
                                 )?;
+                                codes.ir_invert()?;
+
                                 let this_block = block_indexes.pop().ok_or(
                                     CompileError::internal_inconsistency(
                                         &"broken if block",
@@ -305,12 +307,17 @@ impl CodeGen {
                     let loop_index = codes.ir_loop();
                     let mut scope = scope.scoped();
 
-                    Self::process_expression(codes, expr, Some(&builtin_bool), &mut scope, true)?;
+                    Self::process_expression(codes, expr, Some(&builtin_bool), &mut scope)?;
+                    codes.ir_invert()?;
                     codes.ir_br_if(break_index)?;
 
-                    Self::process_block(codes, block, &mut scope, return_type)?;
+                    let block_type = Self::process_block(codes, block, &mut scope, return_type)?;
 
-                    codes.ir_br(loop_index)?;
+                    if block_type.map(|v| v.is_never()).unwrap_or(false) {
+                        has_to_break = true;
+                    } else {
+                        codes.ir_br(loop_index)?;
+                    }
                     codes.ir_end(loop_index)?;
                     codes.ir_end(break_index)?;
                 }
@@ -318,21 +325,20 @@ impl CodeGen {
                 Statement::Expression(expr) => {
                     let expr_type = scope
                         .types()
-                        .canonical_opt(Self::process_expression(codes, expr, None, scope, false)?);
+                        .canonical_opt(Self::process_expression(codes, expr, None, scope)?);
 
-                    if expr_type.is_some() {
+                    if expr_type.as_ref().map(|v| v.is_special()).unwrap_or(true) {
+                    } else {
                         codes.ir_drop()?;
                     }
-                    if let Some(expr_type) = expr_type {
-                        if expr_type.is_never() {
-                            has_to_break = true;
-                        }
+                    if expr_type.map(|v| v.is_never()).unwrap_or(false) {
+                        has_to_break = true;
                     }
                 }
 
                 Statement::ReturnStatement(expr) => {
                     let expr_type =
-                        Self::process_expression(codes, expr, Some(&return_type), scope, false)?
+                        Self::process_expression(codes, expr, Some(&return_type), scope)?
                             .unwrap_or(scope.types().builtin_void());
 
                     codes.ir_return(if expr_type.is_special() { 0 } else { 1 })?;
@@ -366,7 +372,6 @@ impl CodeGen {
         expr: &Expression,
         expected_type: Option<&Arc<TypeDescriptor>>,
         scope: &VariableScope,
-        is_inverted_bool: bool,
     ) -> Result<Option<Arc<TypeDescriptor>>, CompileError> {
         let (item, result_type) = Self::infer_unary(
             &expected_type
@@ -375,7 +380,7 @@ impl CodeGen {
             &expr.item(),
             scope,
         )?;
-        Self::generate_unary(codes, &item, scope, is_inverted_bool)
+        Self::generate_unary(codes, &item, scope)
             .map(|_| result_type.optimistic_type().map(|v| v.clone()))
     }
 
@@ -579,7 +584,6 @@ impl CodeGen {
         codes: &mut tir::CodeStream,
         item: &Unary,
         scope: &VariableScope,
-        is_inverted: bool,
     ) -> Result<(), CompileError> {
         match item {
             Unary::Void(_) => (),
@@ -589,28 +593,30 @@ impl CodeGen {
                     .resolve_local(identifier.as_str())
                     .ok_or(CompileError::identifier_not_found(&identifier))?;
                 codes.ir_local_get(var_idx);
-
-                if is_inverted {
-                    codes.ir_not()?;
-                }
             }
 
             Unary::Parenthesis(expr) => {
-                Self::generate_unary(codes, expr.item(), scope, is_inverted)?;
+                Self::generate_unary(codes, expr.item(), scope)?;
             }
 
             Unary::Unary(op, position, ref value) => match op {
                 UnaryOperator::Plus => {
-                    Self::generate_unary(codes, value, scope, false)?;
+                    Self::generate_unary(codes, value, scope)?;
                 }
 
                 UnaryOperator::Minus => {
-                    Self::generate_unary(codes, value, scope, false)?;
+                    Self::generate_unary(codes, value, scope)?;
                     codes.ir_neg()?;
                 }
 
-                UnaryOperator::LogicalNot | UnaryOperator::BitNot => {
-                    Self::generate_unary(codes, value, scope, !is_inverted)?;
+                UnaryOperator::BitNot => {
+                    Self::generate_unary(codes, value, scope)?;
+                    codes.ir_not()?;
+                }
+
+                UnaryOperator::LogicalNot => {
+                    Self::generate_unary(codes, value, scope)?;
+                    codes.ir_invert()?;
                 }
 
                 UnaryOperator::PreIncrement | UnaryOperator::PreDecrement => {
@@ -678,24 +684,9 @@ impl CodeGen {
                 | BinaryOperator::Ge
                 | BinaryOperator::Identical
                 | BinaryOperator::NotIdentical => {
-                    Self::generate_unary(codes, lhs, scope, false)?;
-                    Self::generate_unary(codes, rhs, scope, false)?;
-
-                    let ir = if is_inverted {
-                        match op.to_ir() {
-                            tir::Op::Eq => tir::Op::Ne,
-                            tir::Op::Ne => tir::Op::Eq,
-                            tir::Op::Lt => tir::Op::Ge,
-                            tir::Op::Gt => tir::Op::Le,
-                            tir::Op::Le => tir::Op::Gt,
-                            tir::Op::Ge => tir::Op::Lt,
-                            _ => unreachable!(),
-                        }
-                    } else {
-                        op.to_ir()
-                    };
-
-                    codes.emit_binop(ir)?;
+                    Self::generate_unary(codes, lhs, scope)?;
+                    Self::generate_unary(codes, rhs, scope)?;
+                    codes.emit_binop(op.to_ir())?;
                 }
 
                 BinaryOperator::Add
@@ -708,13 +699,9 @@ impl CodeGen {
                 | BinaryOperator::BitXor
                 | BinaryOperator::Shl
                 | BinaryOperator::Shr => {
-                    Self::generate_unary(codes, lhs, scope, false)?;
-                    Self::generate_unary(codes, rhs, scope, false)?;
+                    Self::generate_unary(codes, lhs, scope)?;
+                    Self::generate_unary(codes, rhs, scope)?;
                     codes.emit_binop(op.to_ir())?;
-
-                    if is_inverted {
-                        codes.ir_not()?;
-                    }
                 }
 
                 BinaryOperator::Assign
@@ -761,16 +748,12 @@ impl CodeGen {
                         codes.ir_local_get(var_idx);
                     }
 
-                    Self::generate_unary(codes, rhs, scope, false)?;
+                    Self::generate_unary(codes, rhs, scope)?;
 
                     if !matches!(assign_operator, BinaryOperator::Assign) {
                         codes.emit_binop(assign_operator.to_ir())?;
                     }
                     codes.ir_local_tee(var_idx)?;
-
-                    if is_inverted {
-                        codes.ir_not()?;
-                    }
                 }
 
                 BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
@@ -784,8 +767,8 @@ impl CodeGen {
 
             Unary::Constant(constant, _position) => {
                 match constant {
-                    Keyword::True => codes.ir_bool_const(!is_inverted),
-                    Keyword::False => codes.ir_bool_const(is_inverted),
+                    Keyword::True => codes.ir_bool_const(true),
+                    Keyword::False => codes.ir_bool_const(false),
                     _ => {
                         return Err(CompileError::todo(
                             Some(format!("The constant '{:?}' is not supported", constant)),
@@ -842,7 +825,7 @@ impl CodeGen {
                 }
 
                 for (parameter, expr) in func_desc.param_types().iter().zip(args.iter()) {
-                    Self::process_expression(codes, expr, Some(parameter), scope, false)?;
+                    Self::process_expression(codes, expr, Some(parameter), scope)?;
                 }
 
                 codes.ir_call(
@@ -854,9 +837,8 @@ impl CodeGen {
                         1
                     },
                 )?;
-
-                if is_inverted {
-                    codes.ir_not()?;
+                if func_desc.result_type().is_never() {
+                    codes.ir_unreachable();
                 }
             }
         }

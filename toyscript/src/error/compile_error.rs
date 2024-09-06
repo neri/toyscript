@@ -1,6 +1,6 @@
 use crate::{ast::identifier::Identifier, *};
 use core::cmp;
-use tir::{opt::OptimizeError, CodeBuildError};
+use tir::{opt::OptimizeError, AssembleError};
 use token::{TokenError, TokenPosition};
 
 #[derive(Debug)]
@@ -430,10 +430,10 @@ impl From<TokenPosition> for ErrorPosition {
     }
 }
 
-impl From<CodeBuildError> for CompileError {
-    fn from(err: CodeBuildError) -> Self {
+impl From<AssembleError> for CompileError {
+    fn from(err: AssembleError) -> Self {
         CompileError::internal_inconsistency(
-            &format!("Assembler Error: {:?}", err),
+            &format!("Internal Assembler Error: {:?}", err),
             ErrorPosition::Unspecified,
         )
     }

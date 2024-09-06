@@ -9,7 +9,7 @@ pub struct Function {
     params: Vec<Primitive>,
     results: Vec<Primitive>,
     locals: Vec<Primitive>,
-    codes: CodeBuilder,
+    codes: Assembler,
 }
 
 impl Function {
@@ -20,7 +20,7 @@ impl Function {
         params: &[Primitive],
         results: &[Primitive],
         locals: &[Primitive],
-        codes: CodeBuilder,
+        codes: Assembler,
     ) -> Self {
         Self {
             signature: signature.to_owned(),

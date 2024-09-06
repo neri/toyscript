@@ -1,6 +1,4 @@
-//! ToyScript Intermediate Representation Code Builder
-
-use opt::CodeOptimizer;
+//! ToyIR Assembler
 
 use super::*;
 use crate::types::index::LocalIndex;
@@ -8,8 +6,9 @@ use core::{
     mem::transmute,
     sync::atomic::{AtomicU32, Ordering},
 };
+use opt::MinimalCodeOptimizer;
 
-pub struct CodeBuilder {
+pub struct Assembler {
     buf: Vec<u32>,
     ssa_index: AtomicU32,
     value_stack: Vec<SsaIndex>,
@@ -17,7 +16,7 @@ pub struct CodeBuilder {
 }
 
 #[derive(Debug)]
-pub enum CodeBuildError {
+pub enum AssembleError {
     InvalidParameter,
     OutOfBlockStack,
     OutOfValueStack,
@@ -27,11 +26,11 @@ pub enum CodeBuildError {
 }
 
 pub struct CodeStream<'a> {
-    codes: &'a mut CodeBuilder,
+    codes: &'a mut Assembler,
     base_stack_level: usize,
 }
 
-impl CodeBuilder {
+impl Assembler {
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -58,12 +57,12 @@ impl CodeBuilder {
         }
     }
 
-    pub fn finalize(self) -> Result<Self, CodeBuildError> {
+    pub fn finalize(self) -> Result<Self, AssembleError> {
         if self.block_stack.len() != 0 {
-            return Err(CodeBuildError::InvalidBlockStack);
+            return Err(AssembleError::InvalidBlockStack);
         }
         if self.value_stack.len() != 0 {
-            return Err(CodeBuildError::InvalidValueStack);
+            return Err(AssembleError::InvalidValueStack);
         }
 
         let Self {
@@ -73,7 +72,7 @@ impl CodeBuilder {
             block_stack: _,
         } = self;
 
-        let buf = CodeOptimizer::optimize(buf).unwrap();
+        let buf = MinimalCodeOptimizer::optimize(buf).unwrap();
 
         Ok(Self {
             buf,
@@ -120,14 +119,14 @@ impl CodeStream<'_> {
     }
 
     #[inline]
-    fn pop(&mut self) -> Result<SsaIndex, CodeBuildError> {
+    fn pop(&mut self) -> Result<SsaIndex, AssembleError> {
         if self.codes.value_stack.len() > self.base_stack_level {
             self.codes
                 .value_stack
                 .pop()
-                .ok_or(CodeBuildError::OutOfValueStack)
+                .ok_or(AssembleError::OutOfValueStack)
         } else {
-            Err(CodeBuildError::OutOfValueStack)
+            Err(AssembleError::OutOfValueStack)
         }
     }
 
@@ -137,7 +136,7 @@ impl CodeStream<'_> {
     }
 
     #[inline]
-    pub fn emit_binop(&mut self, op: Op) -> Result<(), CodeBuildError> {
+    pub fn emit_binop(&mut self, op: Op) -> Result<(), AssembleError> {
         let rhs = self.pop()?;
         let lhs = self.pop()?;
         let result = self.current_index();
@@ -147,7 +146,7 @@ impl CodeStream<'_> {
     }
 
     #[inline]
-    pub fn emit_unop(&mut self, op: Op) -> Result<(), CodeBuildError> {
+    pub fn emit_unop(&mut self, op: Op) -> Result<(), AssembleError> {
         let operand = self.pop()?;
         let result = self.current_index();
         self.push(result);
@@ -175,14 +174,14 @@ impl CodeStream<'_> {
         BlockIndex(block.0)
     }
 
-    pub fn ir_end(&mut self, index: BlockIndex) -> Result<(), CodeBuildError> {
+    pub fn ir_end(&mut self, index: BlockIndex) -> Result<(), AssembleError> {
         let (test_index, stack_level) = self
             .codes
             .block_stack
             .pop()
-            .ok_or(CodeBuildError::OutOfBlockStack)?;
+            .ok_or(AssembleError::OutOfBlockStack)?;
         if test_index != index {
-            return Err(CodeBuildError::InvalidBlockStack);
+            return Err(AssembleError::InvalidBlockStack);
         }
         self.base_stack_level = stack_level;
         self.emit(Op::End, &[index.0.into()]);
@@ -209,7 +208,7 @@ impl CodeStream<'_> {
     }
 
     #[inline]
-    pub fn ir_br(&mut self, target: BlockIndex) -> Result<(), CodeBuildError> {
+    pub fn ir_br(&mut self, target: BlockIndex) -> Result<(), AssembleError> {
         if self
             .codes
             .block_stack
@@ -217,14 +216,14 @@ impl CodeStream<'_> {
             .find(|v| v.0 == target)
             .is_none()
         {
-            return Err(CodeBuildError::InvalidBranchTarget);
+            return Err(AssembleError::InvalidBranchTarget);
         }
         self.emit(Op::Br, &[Operand::U32(target.0)]);
         Ok(())
     }
 
     #[inline]
-    pub fn ir_br_if(&mut self, target: BlockIndex) -> Result<(), CodeBuildError> {
+    pub fn ir_br_if(&mut self, target: BlockIndex) -> Result<(), AssembleError> {
         if self
             .codes
             .block_stack
@@ -232,7 +231,7 @@ impl CodeStream<'_> {
             .find(|v| v.0 == target)
             .is_none()
         {
-            return Err(CodeBuildError::InvalidBranchTarget);
+            return Err(AssembleError::InvalidBranchTarget);
         }
         let cc = self.pop()?;
         self.emit(Op::BrIf, &[Operand::U32(target.0), cc.into()]);
@@ -247,14 +246,14 @@ impl CodeStream<'_> {
     }
 
     #[inline]
-    pub fn ir_local_set(&mut self, localidx: LocalIndex) -> Result<(), CodeBuildError> {
+    pub fn ir_local_set(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
         let result = self.pop()?;
         self.emit(Op::LocalSet, &[result.into(), Operand::U32(localidx.get())]);
         Ok(())
     }
 
     #[inline]
-    pub fn ir_local_tee(&mut self, localidx: LocalIndex) -> Result<(), CodeBuildError> {
+    pub fn ir_local_tee(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
         let result = self.current_index();
         let ssa_index = self.pop()?;
         self.push(result);
@@ -269,7 +268,7 @@ impl CodeStream<'_> {
         Ok(())
     }
 
-    pub fn ir_drop(&mut self) -> Result<(), CodeBuildError> {
+    pub fn ir_drop(&mut self) -> Result<(), AssembleError> {
         let result = self.pop()?;
         self.emit(Op::Drop, &[result.into()]);
         Ok(())
@@ -280,7 +279,7 @@ impl CodeStream<'_> {
         target: usize,
         params_len: usize,
         result_len: usize,
-    ) -> Result<(), CodeBuildError> {
+    ) -> Result<(), AssembleError> {
         let mut params = Vec::with_capacity(params_len);
         for _ in 0..params_len {
             params.push(Operand::from(self.pop()?));
@@ -296,7 +295,7 @@ impl CodeStream<'_> {
         Ok(())
     }
 
-    pub fn ir_return(&mut self, result_len: usize) -> Result<(), CodeBuildError> {
+    pub fn ir_return(&mut self, result_len: usize) -> Result<(), AssembleError> {
         if result_len > 0 {
             let result = self.pop()?;
             self.emit(Op::Return, &[result.into()]);
@@ -305,9 +304,17 @@ impl CodeStream<'_> {
         }
         Ok(())
     }
+
+    pub fn ir_invert(&mut self) -> Result<(), AssembleError> {
+        let operand = self.pop()?;
+        let result = self.current_index();
+        self.push(result);
+        self.emit(Op::Eqz, &[result.into(), operand.into(), 0.into()]);
+        Ok(())
+    }
 }
 
-impl core::fmt::Debug for CodeBuilder {
+impl core::fmt::Debug for Assembler {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
@@ -328,10 +335,10 @@ impl<'a> Iterator for CodeStreamIter<'a> {
             let len = (len_opc >> 16) as usize;
             if len > 0 {
                 let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
-                if opcode == Op::Nop {
-                    self.index += len - 1;
-                    continue;
-                }
+                // if opcode == Op::Nop {
+                //     self.index += len - 1;
+                //     continue;
+                // }
                 let mut params = Vec::with_capacity(len);
                 for _ in 1..len {
                     params.push(*self.buf.get(self.index)?);
@@ -437,7 +444,7 @@ macro_rules! ir_unops {
         impl CodeStream<'_> {
             $(
                 #[inline]
-                pub fn $func_name(&mut self) -> Result<(), CodeBuildError> {
+                pub fn $func_name(&mut self) -> Result<(), AssembleError> {
                     self.emit_unop(Op::$op)
                 }
             )*
@@ -447,7 +454,7 @@ macro_rules! ir_unops {
 
 ir_unops! {
     ir_neg: Neg;
-    ir_not: Eqz;
+    ir_not: Not;
     ir_inc: Inc;
     ir_dec: Dec;
 }

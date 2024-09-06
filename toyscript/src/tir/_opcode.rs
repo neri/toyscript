@@ -68,6 +68,8 @@ pub enum Op {
     Neg,
     /// "nop"
     Nop,
+    /// "not"
+    Not,
     /// "or"
     Or,
     /// "popcnt"
@@ -126,6 +128,7 @@ impl Op {
             Self::Ne,
             Self::Neg,
             Self::Nop,
+            Self::Not,
             Self::Or,
             Self::Popcnt,
             Self::Rem,
@@ -173,6 +176,7 @@ impl Op {
             "ne" => Some(Self::Ne),
             "neg" => Some(Self::Neg),
             "nop" => Some(Self::Nop),
+            "not" => Some(Self::Not),
             "or" => Some(Self::Or),
             "popcnt" => Some(Self::Popcnt),
             "rem" => Some(Self::Rem),
@@ -221,6 +225,7 @@ impl Op {
             Self::Ne => "ne",
             Self::Neg => "neg",
             Self::Nop => "nop",
+            Self::Not => "not",
             Self::Or => "or",
             Self::Popcnt => "popcnt",
             Self::Rem => "rem",

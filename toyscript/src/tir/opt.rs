@@ -1,4 +1,4 @@
-//! Simple Code Optimizer
+//! Minimal Code Optimizer
 
 use super::*;
 use core::{
@@ -6,7 +6,7 @@ use core::{
     ops::{BitAnd, BitOr, BitXor},
 };
 
-pub struct CodeOptimizer {
+pub struct MinimalCodeOptimizer {
     positions: Vec<ArrayIndex>,
     codes: Vec<u32>,
 }
@@ -25,16 +25,17 @@ pub enum OptimizeError {
     OverwriteError(usize, usize, usize),
 
     InvalidDropChain(usize),
+
+    RenameError(usize, usize, usize),
 }
 
-impl CodeOptimizer {
+impl MinimalCodeOptimizer {
     pub fn optimize(codes: Vec<u32>) -> Result<Vec<u32>, OptimizeError> {
         let mut positions = Vec::with_capacity(codes.len() / 4);
         let mut index = 0;
         while let Some(len_opc) = codes.get(index) {
             let len_opc = *len_opc;
             let len = (len_opc >> 16) as usize;
-            // let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
             if len == 0 {
                 break;
             }
@@ -67,29 +68,6 @@ impl CodeOptimizer {
                 }
 
                 match opcode {
-                    Op::Nop
-                    | Op::Block
-                    | Op::Call
-                    | Op::Clz
-                    | Op::Ctz
-                    | Op::Dec
-                    | Op::End
-                    | Op::F32Const
-                    | Op::F64Const
-                    | Op::Ge
-                    | Op::Gt
-                    | Op::I32Const
-                    | Op::I64Const
-                    | Op::Inc
-                    | Op::Le
-                    | Op::LocalGet
-                    | Op::LocalSet
-                    | Op::LocalTee
-                    | Op::Loop
-                    | Op::Lt
-                    | Op::Neg
-                    | Op::Popcnt => {}
-
                     Op::Br | Op::Return | Op::Unreachable => {
                         skip_until_end = true;
                     }
@@ -168,12 +146,87 @@ impl CodeOptimizer {
                     // unop
                     Op::Eqz => {
                         let result = CodeIndex(self.param(base, len, 1)?);
-                        let operand = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
-                        if let Some(const_val) = self.get_i32_const(operand)? {
-                            self.replace_nop(operand)?;
-                            self.replace(base, Op::I32Const, &[result.0, (const_val == 0) as u32])?;
+                        let target = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
+                        let (len2, op2) = self.get_op(target)?;
+                        match op2 {
+                            Op::Eqz => {
+                                // self.replace_nop(target)?;
+                                // self.replace_nop(base)?;
+                            }
+                            Op::I32Const => {
+                                let const_val = self.param(target, len2, 2)?;
+                                self.replace_nop(target)?;
+                                self.replace(
+                                    base,
+                                    Op::I32Const,
+                                    &[result.0, (const_val == 0) as u32],
+                                )?;
+                            }
+
+                            Op::Eq => {
+                                let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                self.replace_nop(target)?;
+                                self.replace(base, Op::Ne, &[result.0, lhs.0, rhs.0])?;
+                            }
+                            Op::Ne => {
+                                let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                self.replace_nop(target)?;
+                                self.replace(base, Op::Eq, &[result.0, lhs.0, rhs.0])?;
+                            }
+                            Op::Lt => {
+                                let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                self.replace_nop(target)?;
+                                self.replace(base, Op::Ge, &[result.0, lhs.0, rhs.0])?;
+                            }
+                            Op::Gt => {
+                                let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                self.replace_nop(target)?;
+                                self.replace(base, Op::Le, &[result.0, lhs.0, rhs.0])?;
+                            }
+                            Op::Le => {
+                                let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                self.replace_nop(target)?;
+                                self.replace(base, Op::Gt, &[result.0, lhs.0, rhs.0])?;
+                            }
+                            Op::Ge => {
+                                let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                self.replace_nop(target)?;
+                                self.replace(base, Op::Lt, &[result.0, lhs.0, rhs.0])?;
+                            }
+
+                            _ => {}
                         }
                     }
+
+                    Op::Nop
+                    | Op::Block
+                    | Op::Call
+                    | Op::Clz
+                    | Op::Ctz
+                    | Op::Dec
+                    | Op::End
+                    | Op::F32Const
+                    | Op::F64Const
+                    | Op::Ge
+                    | Op::Gt
+                    | Op::I32Const
+                    | Op::I64Const
+                    | Op::Inc
+                    | Op::Le
+                    | Op::LocalGet
+                    | Op::LocalSet
+                    | Op::LocalTee
+                    | Op::Loop
+                    | Op::Lt
+                    | Op::Neg
+                    | Op::Not
+                    | Op::Popcnt => {}
                 }
             }
         }
@@ -257,6 +310,167 @@ impl CodeOptimizer {
         }
         drop(block_freqs);
 
+        {
+            // Reduce unnecessary operations - step 2
+            let mut ci = 0;
+            let mut skip_until_end = false;
+            while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                ci += 1;
+                let (_len, opcode) = self.get_op(base)?;
+
+                if skip_until_end {
+                    if opcode != Op::End {
+                        self.replace_nop(base)?;
+                    } else {
+                        skip_until_end = false;
+                    }
+                    continue;
+                }
+
+                match opcode {
+                    Op::Br | Op::Return | Op::Unreachable => {
+                        skip_until_end = true;
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
+        {
+            // compaction & renumber
+            let mut ren_tbl = BTreeMap::new();
+            let mut new_positions = Vec::new();
+            let mut new_ci = 0;
+            let mut oi = 0;
+            for (i, ai) in self.positions.iter().enumerate() {
+                let ci = CodeIndex(i as u32);
+                let ai = *ai;
+                let (len, opc) = self.get_op(ai)?;
+                if opc == Op::Nop {
+                    continue;
+                }
+                ren_tbl.insert(ci, CodeIndex(new_ci));
+                new_positions.push(ArrayIndex(oi as u32));
+                for i in 0..len {
+                    self.codes[oi + i] = self.codes[ai.as_usize() + i];
+                }
+                oi += len;
+                new_ci += 1;
+            }
+            self.codes.resize(oi, 0xCCCC_CCCC);
+            self.codes.shrink_to_fit();
+            self.positions = new_positions;
+
+            let mut ci = 0;
+            while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                ci += 1;
+                let (len, opcode) = self.get_op(base)?;
+                match opcode {
+                    Op::Nop | Op::Unreachable => {}
+
+                    Op::Return => {
+                        for i in 1..len {
+                            self.rename(&ren_tbl, base, len, i)?;
+                        }
+                    }
+
+                    Op::Call => {
+                        for i in 1..len {
+                            if i == 2 {
+                                continue;
+                            }
+                            self.rename(&ren_tbl, base, len, i)?;
+                        }
+                    }
+
+                    // %n = op [n, ...]
+                    Op::Block
+                    | Op::Br
+                    | Op::Drop
+                    | Op::End
+                    | Op::F32Const
+                    | Op::F64Const
+                    | Op::I32Const
+                    | Op::I64Const
+                    | Op::LocalGet
+                    | Op::LocalSet
+                    | Op::LocalTee
+                    | Op::Loop => {
+                        self.rename(&ren_tbl, base, len, 1)?;
+                    }
+
+                    // unary
+                    // %n = op %n
+                    Op::BrIf
+                    | Op::Clz
+                    | Op::Ctz
+                    | Op::Dec
+                    | Op::Eqz
+                    | Op::Inc
+                    | Op::Neg
+                    | Op::Not
+                    | Op::Popcnt => {
+                        for i in 1..=2 {
+                            self.rename(&ren_tbl, base, len, i)?;
+                        }
+                    }
+
+                    // binary
+                    // %n = op %n, %n
+                    Op::Add
+                    | Op::And
+                    | Op::Div
+                    | Op::Eq
+                    | Op::Ge
+                    | Op::Gt
+                    | Op::Le
+                    | Op::Lt
+                    | Op::Mul
+                    | Op::Ne
+                    | Op::Or
+                    | Op::Rem
+                    | Op::Rotl
+                    | Op::Rotr
+                    | Op::Shl
+                    | Op::Shr
+                    | Op::Sub
+                    | Op::Xor => {
+                        for i in 1..=3 {
+                            self.rename(&ren_tbl, base, len, i)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn rename(
+        &mut self,
+        ren_tbl: &BTreeMap<CodeIndex, CodeIndex>,
+        base: ArrayIndex,
+        len: usize,
+        index: usize,
+    ) -> Result<(), OptimizeError> {
+        if index >= len {
+            return Err(OptimizeError::InvalidParameter(base.as_usize(), index));
+        }
+        let addr = base.as_usize() + index;
+        let p = self
+            .codes
+            .get_mut(addr)
+            .ok_or(OptimizeError::OutOfCodes(addr))?;
+
+        let old = CodeIndex(*p);
+        let new = ren_tbl.get(&old).ok_or(OptimizeError::RenameError(
+            base.as_usize(),
+            index,
+            old.as_usize(),
+        ))?;
+        *p = new.0;
+
         Ok(())
     }
 
@@ -273,9 +487,7 @@ impl CodeOptimizer {
             Op::Call => Ok(false),
 
             Op::LocalTee => {
-                let result = self.param(base, len, 1)?;
-                let operand = self.param(base, len, 2)?;
-                self.replace(base, Op::LocalSet, &[result, operand])?;
+                self.replace_opcode(base, Op::LocalSet)?;
                 Ok(true)
             }
 
@@ -305,7 +517,7 @@ impl CodeOptimizer {
             }
 
             // unop
-            Op::Clz | Op::Ctz | Op::Dec | Op::Eqz | Op::Inc | Op::Neg | Op::Popcnt => {
+            Op::Clz | Op::Ctz | Op::Dec | Op::Eqz | Op::Inc | Op::Neg | Op::Not | Op::Popcnt => {
                 self.chain_drop(CodeIndex(self.param(base, len, 2)?))?;
                 self.replace_nop(base)?;
                 return Ok(true);
@@ -390,20 +602,21 @@ impl CodeOptimizer {
         Ok(())
     }
 
-    fn replace_nop(&mut self, index: ArrayIndex) -> Result<(), OptimizeError> {
-        let len_opc = *self
-            .codes
-            .get(index.as_usize())
-            .ok_or(OptimizeError::OutOfCodes(index.as_usize()))?;
-        self.codes[index.as_usize()] = (len_opc & 0xFFFF0000) | (Op::Nop as u32);
+    fn replace_opcode(&mut self, target: ArrayIndex, opcode: Op) -> Result<(), OptimizeError> {
+        let (len, _) = self.get_op(target)?;
+        self.codes[target.as_usize()] = ((len as u32) << 16) | (opcode as u32);
         Ok(())
+    }
+
+    fn replace_nop(&mut self, target: ArrayIndex) -> Result<(), OptimizeError> {
+        self.replace_opcode(target, Op::Nop)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct CodeIndex(u32);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct ArrayIndex(u32);
 
 impl CodeIndex {

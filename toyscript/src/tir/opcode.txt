@@ -48,11 +48,11 @@ rotl
 rotr
 
 neg
+not
 inc
 dec
 
 #abs
-#neg
 #ceil
 #floor
 #trunk
