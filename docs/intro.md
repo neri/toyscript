@@ -12,46 +12,62 @@ export function add(a: int, b: int): int {
 
 ### for statement
 
-`for` ??? `{` expr `}`
+```
+'for' ??? '{' expr '}'
+```
 
 - _Currently, not yet supported_
 - _Braces cannot be omitted_
 
 ### function statement
 
-[`export`] `function` identifier `(` [identifier `:` type (`,` identifier `:` type )* [`,`] ] `)` [`:` type] `{` expr `}`
+```
+['export'] 'function' identifier '(' [identifier ':' type (',' identifier ':' type )* [','] ] ')' [':' type] '{' expr '}'
+```
 
 ### if-else statement
 
-`if` expr `{` expr `}` [`else` `{` expr `}`]
+```
+'if' expr '{' expr '}' ['else' '{' expr '}']
+```
 
 - _Braces cannot be omitted_
 
 ### return statement
 
-`return` expr
+```
+'return' expr
+```
 
 ### switch statement
 
-`switch` expr `{` ??? `}`
+```
+'switch' expr '{' ??? '}'
+```
 
 - _Currently, not yet supported_
 - _Braces cannot be omitted_
 
 ### type statement
 
-`declare` `type` identifer `=` type
+```
+'declare' 'type' identifer '=' type
+```
 
 ### var statement
 
-(`const` | `let` | `var`) identifier [`:` type] [`=` expr]
+```
+('const' | 'let' | 'var') identifier [':' type] ['=' expr]
+```
 
 - Currently there is no difference between `let` and `var`.
 - Type inference is made only on the first assignment that defines a variable.
 
 ### while statement
 
-`while` expr `{` expr `}`
+```
+'while' expr '{' expr '}'
+```
 
 - _Braces cannot be omitted_
 
