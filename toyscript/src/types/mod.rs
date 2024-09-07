@@ -14,6 +14,8 @@ pub use _primitive::*;
 
 pub const BUILTIN_BOOL: &str = "bool";
 
+pub const BUILTIN_BOOLEAN: &str = "boolean";
+
 pub const BUILTIN_ISIZE: &str = "isize";
 
 pub const BUILTIN_USIZE: &str = "usize";
@@ -77,6 +79,9 @@ impl TypeSystem {
             .unwrap();
         system
             .make_primitive_alias(BUILTIN_CHAR, Primitive::U32)
+            .unwrap();
+        system
+            .make_primitive_alias(BUILTIN_BOOLEAN, Primitive::Bool)
             .unwrap();
 
         system.set_use(32).unwrap();
@@ -215,9 +220,14 @@ impl TypeSystem {
         self.resolve(primitive.as_str()).unwrap()
     }
 
+    // #[inline]
+    // pub fn builtin_bool(&self) -> Arc<TypeDescriptor> {
+    //     self.get(BUILTIN_BOOL).map(|v| v.clone()).unwrap()
+    // }
+
     #[inline]
-    pub fn builtin_bool(&self) -> Arc<TypeDescriptor> {
-        self.get(BUILTIN_BOOL).map(|v| v.clone()).unwrap()
+    pub fn builtin_boolean(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_BOOLEAN).map(|v| v.clone()).unwrap()
     }
 
     #[inline]
@@ -443,9 +453,14 @@ impl TypeSystem {
         }
     }
 
+    // #[inline]
+    // pub fn canonical_opt(&self, ty: Option<&Arc<TypeDescriptor>>) -> Option<Arc<TypeDescriptor>> {
+    //     ty.filter(|v| !v.is_void()).map(|v| v.clone())
+    // }
+
     #[inline]
-    pub fn canonical_opt(&self, ty: Option<Arc<TypeDescriptor>>) -> Option<Arc<TypeDescriptor>> {
-        ty.filter(|v| !v.is_void())
+    pub fn canonical(&self, ty: Option<&Arc<TypeDescriptor>>) -> Arc<TypeDescriptor> {
+        ty.map(|v| v.clone()).unwrap_or(self.builtin_void())
     }
 
     pub fn global_object(&self, identifier: &str) -> Option<GlobalObjectIndex> {
@@ -526,6 +541,18 @@ impl Primitive {
             Primitive::Void => 0,
         }
     }
+
+    pub const fn is_signed(&self) -> bool {
+        match self {
+            Primitive::F32
+            | Primitive::F64
+            | Primitive::I16
+            | Primitive::I32
+            | Primitive::I64
+            | Primitive::I8 => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -588,9 +615,14 @@ impl TypeDescriptor {
         matches!(self.kind, TypeKind::Reference(_))
     }
 
+    // #[inline]
+    // pub fn is_bool(&self) -> bool {
+    //     self.identifier() == BUILTIN_BOOL
+    // }
+
     #[inline]
-    pub fn is_bool(&self) -> bool {
-        self.identifier() == BUILTIN_BOOL
+    pub fn is_boolean(&self) -> bool {
+        self.identifier() == BUILTIN_BOOLEAN
     }
 
     #[inline]
@@ -611,6 +643,7 @@ impl TypeDescriptor {
     #[inline]
     pub fn mangled(&self) -> String {
         let ch = match self.identifier() {
+            BUILTIN_BOOLEAN => 'b',
             BUILTIN_CHAR => 'w',
             BUILTIN_INT => 'i',
             BUILTIN_UINT => 'j',
@@ -652,6 +685,7 @@ pub enum TypeKind {
     Primitive(Primitive),
     Alias(Arc<TypeDescriptor>),
     Reference(Arc<TypeDescriptor>),
+    //Optional(T),
     //Class(T),
     //Function(T),
 }

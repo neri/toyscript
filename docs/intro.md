@@ -13,7 +13,7 @@ export function add(a: int, b: int): int {
 ### for statement
 
 ```
-'for' ??? '{' expr '}'
+'for' '(' expr ';' expr ';' expr ')' '{' expr '}'
 ```
 
 - _Currently, not yet supported_
@@ -59,10 +59,9 @@ export function add(a: int, b: int): int {
 ### var statement
 
 ```
-('const' | 'let' | 'var') identifier [':' type] ['=' expr]
+('const' | 'let') identifier [':' type] ['=' expr] (',' identifier [':' type] ['=' expr])*
 ```
 
-- Currently there is no difference between `let` and `var`.
 - Type inference is made only on the first assignment that defines a variable.
 
 ### while statement
@@ -85,7 +84,7 @@ ToyScript requires a more strict numeric type.
 
 ### Conditional Expression Type
 
-In ToyScript, conditional expressions must be strictly of type `bool`.
+In ToyScript, conditional expressions must be strictly of type `boolean`.
 
 ### Classes, Enums, ...
 

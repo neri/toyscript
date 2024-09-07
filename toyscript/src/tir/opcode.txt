@@ -1,6 +1,7 @@
 
 unreachable
 nop
+unary_nop
 
 block
 loop
@@ -26,10 +27,14 @@ local.tee
 eqz
 eq
 ne
-gt
-lt
-ge
-le
+lt_s
+lt_u
+gt_s
+gt_u
+le_s
+le_u
+ge_s
+ge_u
 
 clz
 ctz
@@ -37,10 +42,13 @@ popcnt
 add
 sub
 mul
-div
-rem
+div_s
+div_u
+rem_s
+rem_u
 shl
-shr
+shr_s
+shr_u
 and
 or
 xor
@@ -51,8 +59,3 @@ neg
 not
 inc
 dec
-
-#abs
-#ceil
-#floor
-#trunk

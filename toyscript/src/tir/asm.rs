@@ -3,26 +3,19 @@
 use super::*;
 use crate::types::index::LocalIndex;
 use core::{
+    error::Error,
     mem::transmute,
     sync::atomic::{AtomicU32, Ordering},
 };
+use error::AssembleError;
 use opt::MinimalCodeOptimizer;
 
 pub struct Assembler {
     buf: Vec<u32>,
+    resule_size: usize,
     ssa_index: AtomicU32,
     value_stack: Vec<SsaIndex>,
     block_stack: Vec<(BlockIndex, usize)>,
-}
-
-#[derive(Debug)]
-pub enum AssembleError {
-    InvalidParameter,
-    OutOfBlockStack,
-    OutOfValueStack,
-    InvalidBlockStack,
-    InvalidValueStack,
-    InvalidBranchTarget,
 }
 
 pub struct CodeStream<'a> {
@@ -32,9 +25,10 @@ pub struct CodeStream<'a> {
 
 impl Assembler {
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(resule_size: usize) -> Self {
         Self {
             buf: Default::default(),
+            resule_size,
             ssa_index: AtomicU32::new(0),
             value_stack: Default::default(),
             block_stack: Default::default(),
@@ -57,25 +51,27 @@ impl Assembler {
         }
     }
 
-    pub fn finalize(self) -> Result<Self, AssembleError> {
+    pub fn finalize(self) -> Result<Self, Box<dyn Error>> {
         if self.block_stack.len() != 0 {
-            return Err(AssembleError::InvalidBlockStack);
+            return Err(AssembleError::InvalidBlockStack.into());
         }
         if self.value_stack.len() != 0 {
-            return Err(AssembleError::InvalidValueStack);
+            return Err(AssembleError::InvalidValueStack.into());
         }
 
         let Self {
             buf,
+            resule_size,
             ssa_index,
             value_stack: _,
             block_stack: _,
         } = self;
 
-        let buf = MinimalCodeOptimizer::optimize(buf).unwrap();
+        let buf = MinimalCodeOptimizer::optimize(buf)?;
 
         Ok(Self {
             buf,
+            resule_size,
             ssa_index,
             value_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -90,7 +86,7 @@ impl CodeStream<'_> {
     }
 
     fn emit(&mut self, op: Op, operands: &[Operand]) {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(1 + operands.len());
         for operand in operands {
             match operand {
                 Operand::SsaIndex(v) => buf.push(v.0),
@@ -113,13 +109,11 @@ impl CodeStream<'_> {
             .push((buf.len() as u32 + 1) << 16 | op as u32);
         self.codes.buf.extend(&buf);
 
-        self.codes
-            .ssa_index
-            .fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        self.codes.ssa_index.fetch_add(1, Ordering::SeqCst);
     }
 
     #[inline]
-    fn pop(&mut self) -> Result<SsaIndex, AssembleError> {
+    fn pop_vs(&mut self) -> Result<SsaIndex, AssembleError> {
         if self.codes.value_stack.len() > self.base_stack_level {
             self.codes
                 .value_stack
@@ -131,34 +125,38 @@ impl CodeStream<'_> {
     }
 
     #[inline]
-    fn push(&mut self, value: SsaIndex) {
+    fn push_vs(&mut self, value: SsaIndex) {
         self.codes.value_stack.push(value);
     }
 
+    /// %result = binop %operand1, %operand2
     #[inline]
     pub fn emit_binop(&mut self, op: Op) -> Result<(), AssembleError> {
-        let rhs = self.pop()?;
-        let lhs = self.pop()?;
+        let rhs = self.pop_vs()?;
+        let lhs = self.pop_vs()?;
         let result = self.current_index();
-        self.push(result);
+        self.push_vs(result);
         self.emit(op, &[result.into(), lhs.into(), rhs.into()]);
         Ok(())
     }
 
+    /// %result = unop %operand1
     #[inline]
     pub fn emit_unop(&mut self, op: Op) -> Result<(), AssembleError> {
-        let operand = self.pop()?;
+        let operand = self.pop_vs()?;
         let result = self.current_index();
-        self.push(result);
+        self.push_vs(result);
         self.emit(op, &[result.into(), operand.into()]);
         Ok(())
     }
 
+    /// %block = block
     #[inline]
     pub fn ir_block(&mut self) -> BlockIndex {
         self.begin_block(Op::Block)
     }
 
+    /// %block = loop
     #[inline]
     pub fn ir_loop(&mut self) -> BlockIndex {
         self.begin_block(Op::Loop)
@@ -174,6 +172,7 @@ impl CodeStream<'_> {
         BlockIndex(block.0)
     }
 
+    /// end %block
     pub fn ir_end(&mut self, index: BlockIndex) -> Result<(), AssembleError> {
         let (test_index, stack_level) = self
             .codes
@@ -188,25 +187,29 @@ impl CodeStream<'_> {
         Ok(())
     }
 
+    /// %result = const $i
     #[inline]
     pub fn ir_bool_const(&mut self, value: bool) {
         self.ir_i32_const(value as i32)
     }
 
+    /// %result = const $i
     #[inline]
     pub fn ir_i32_const(&mut self, value: i32) {
         let result = self.current_index();
-        self.push(result);
+        self.push_vs(result);
         self.emit(Op::I32Const, &[result.into(), value.into()]);
     }
 
+    /// %result = const $i
     #[inline]
     pub fn ir_i64_const(&mut self, value: i64) {
         let result = self.current_index();
-        self.push(result);
+        self.push_vs(result);
         self.emit(Op::I64Const, &[result.into(), value.into()]);
     }
 
+    /// br %block
     #[inline]
     pub fn ir_br(&mut self, target: BlockIndex) -> Result<(), AssembleError> {
         if self
@@ -222,6 +225,7 @@ impl CodeStream<'_> {
         Ok(())
     }
 
+    /// br %block, %cond
     #[inline]
     pub fn ir_br_if(&mut self, target: BlockIndex) -> Result<(), AssembleError> {
         if self
@@ -233,30 +237,33 @@ impl CodeStream<'_> {
         {
             return Err(AssembleError::InvalidBranchTarget);
         }
-        let cc = self.pop()?;
-        self.emit(Op::BrIf, &[Operand::U32(target.0), cc.into()]);
+        let cond = self.pop_vs()?;
+        self.emit(Op::BrIf, &[Operand::U32(target.0), cond.into()]);
         Ok(())
     }
 
+    /// %result = local_get $idx
     #[inline]
     pub fn ir_local_get(&mut self, localidx: LocalIndex) {
         let result = self.current_index();
-        self.push(result);
+        self.push_vs(result);
         self.emit(Op::LocalGet, &[result.into(), Operand::U32(localidx.get())]);
     }
 
+    /// local_get %value, $idx
     #[inline]
     pub fn ir_local_set(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
-        let result = self.pop()?;
+        let result = self.pop_vs()?;
         self.emit(Op::LocalSet, &[result.into(), Operand::U32(localidx.get())]);
         Ok(())
     }
 
+    /// %result = local_tee $idx, %value
     #[inline]
     pub fn ir_local_tee(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
         let result = self.current_index();
-        let ssa_index = self.pop()?;
-        self.push(result);
+        let ssa_index = self.pop_vs()?;
+        self.push_vs(result);
         self.emit(
             Op::LocalTee,
             &[
@@ -268,12 +275,14 @@ impl CodeStream<'_> {
         Ok(())
     }
 
+    /// drop %value
     pub fn ir_drop(&mut self) -> Result<(), AssembleError> {
-        let result = self.pop()?;
+        let result = self.pop_vs()?;
         self.emit(Op::Drop, &[result.into()]);
         Ok(())
     }
 
+    /// %result = call ($params, ...)
     pub fn ir_call(
         &mut self,
         target: usize,
@@ -282,33 +291,35 @@ impl CodeStream<'_> {
     ) -> Result<(), AssembleError> {
         let mut params = Vec::with_capacity(params_len);
         for _ in 0..params_len {
-            params.push(Operand::from(self.pop()?));
+            params.push(Operand::from(self.pop_vs()?));
         }
         let result = self.current_index();
         params.push(Operand::U32(target as u32));
         params.push(result.into());
         params.reverse();
         if result_len > 0 {
-            self.push(result);
+            self.push_vs(result);
         }
         self.emit(Op::Call, &params);
         Ok(())
     }
 
-    pub fn ir_return(&mut self, result_len: usize) -> Result<(), AssembleError> {
-        if result_len > 0 {
-            let result = self.pop()?;
-            self.emit(Op::Return, &[result.into()]);
-        } else {
-            self.emit(Op::Return, &[]);
+    /// result %value
+    pub fn ir_return(&mut self) -> Result<(), AssembleError> {
+        let mut results = Vec::new();
+        for _ in 0..self.codes.resule_size {
+            let result = self.pop_vs()?;
+            results.push(Operand::SsaIndex(result))
         }
+        self.emit(Op::Return, &results);
         Ok(())
     }
 
+    /// %result = invert %value, 0
     pub fn ir_invert(&mut self) -> Result<(), AssembleError> {
-        let operand = self.pop()?;
+        let operand = self.pop_vs()?;
         let result = self.current_index();
-        self.push(result);
+        self.push_vs(result);
         self.emit(Op::Eqz, &[result.into(), operand.into(), 0.into()]);
         Ok(())
     }
@@ -329,25 +340,19 @@ impl<'a> Iterator for CodeStreamIter<'a> {
     type Item = CodeFragment;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let len_opc = self.buf.get(self.index)?;
-            self.index += 1;
-            let len = (len_opc >> 16) as usize;
-            if len > 0 {
-                let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
-                // if opcode == Op::Nop {
-                //     self.index += len - 1;
-                //     continue;
-                // }
-                let mut params = Vec::with_capacity(len);
-                for _ in 1..len {
-                    params.push(*self.buf.get(self.index)?);
-                    self.index += 1;
-                }
-                return Some(CodeFragment { opcode, params });
-            } else {
-                return None;
+        let len_opc = self.buf.get(self.index)?;
+        self.index += 1;
+        let len = (len_opc >> 16) as usize;
+        if len > 0 {
+            let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
+            let mut params = Vec::with_capacity(len);
+            for _ in 1..len {
+                params.push(*self.buf.get(self.index)?);
+                self.index += 1;
             }
+            Some(CodeFragment { opcode, params })
+        } else {
+            None
         }
     }
 }

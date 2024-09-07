@@ -881,42 +881,48 @@ impl BinaryOperator {
         )
     }
 
-    pub fn to_ir(&self) -> tir::Op {
-        match self {
-            BinaryOperator::Identical => tir::Op::Eq,
-            BinaryOperator::NotIdentical => tir::Op::Ne,
-            BinaryOperator::Eq => tir::Op::Eq,
-            BinaryOperator::Ne => tir::Op::Ne,
-            BinaryOperator::Lt => tir::Op::Lt,
-            BinaryOperator::Gt => tir::Op::Gt,
-            BinaryOperator::Le => tir::Op::Le,
-            BinaryOperator::Ge => tir::Op::Ge,
+    pub fn to_ir(&self, is_signed: bool) -> tir::Op {
+        use tir::Op;
+        let (sop, uop) = match self {
+            Self::Identical => (Op::Eq, Op::Eq),
+            Self::NotIdentical => (Op::Ne, Op::Ne),
+            Self::Eq => (Op::Eq, Op::Eq),
+            Self::Ne => (Op::Ne, Op::Ne),
+            Self::Lt => (Op::LtS, Op::LtU),
+            Self::Gt => (Op::GtS, Op::GtU),
+            Self::Le => (Op::LeS, Op::LeU),
+            Self::Ge => (Op::GeS, Op::GeU),
 
-            BinaryOperator::Add => tir::Op::Add,
-            BinaryOperator::Sub => tir::Op::Sub,
-            BinaryOperator::Mul => tir::Op::Mul,
-            BinaryOperator::Div => tir::Op::Div,
-            BinaryOperator::Rem => tir::Op::Rem,
-            BinaryOperator::BitAnd => tir::Op::And,
-            BinaryOperator::BitOr => tir::Op::Or,
-            BinaryOperator::BitXor => tir::Op::Xor,
-            BinaryOperator::Shl => tir::Op::Shl,
-            BinaryOperator::Shr => tir::Op::Shr,
+            Self::Add => (Op::Add, Op::Add),
+            Self::Sub => (Op::Sub, Op::Sub),
+            Self::Mul => (Op::Mul, Op::Mul),
+            Self::Div => (Op::DivS, Op::DivU),
+            Self::Rem => (Op::RemS, Op::RemU),
+            Self::BitAnd => (Op::And, Op::And),
+            Self::BitOr => (Op::Or, Op::Or),
+            Self::BitXor => (Op::Xor, Op::Xor),
+            Self::Shl => (Op::Shl, Op::Shl),
+            Self::Shr => (Op::ShrS, Op::ShrU),
 
-            BinaryOperator::Assign
-            | BinaryOperator::AssignAdd
-            | BinaryOperator::AssignSub
-            | BinaryOperator::AssignMul
-            | BinaryOperator::AssignDiv
-            | BinaryOperator::AssignRem
-            | BinaryOperator::AssignBitAnd
-            | BinaryOperator::AssignBitOr
-            | BinaryOperator::AssignBitXor
-            | BinaryOperator::AssignShl
-            | BinaryOperator::AssignShr
-            | BinaryOperator::LogicalAnd
-            | BinaryOperator::LogicalOr
-            | BinaryOperator::Exponentiation => unreachable!(),
+            Self::Assign
+            | Self::AssignAdd
+            | Self::AssignSub
+            | Self::AssignMul
+            | Self::AssignDiv
+            | Self::AssignRem
+            | Self::AssignBitAnd
+            | Self::AssignBitOr
+            | Self::AssignBitXor
+            | Self::AssignShl
+            | Self::AssignShr
+            | Self::LogicalAnd
+            | Self::LogicalOr
+            | Self::Exponentiation => unreachable!(),
+        };
+        if is_signed {
+            sop
+        } else {
+            uop
         }
     }
 }

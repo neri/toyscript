@@ -37,8 +37,8 @@ pub enum Statement {
     /// `if` expr `{` block `}` [[`else` `if` `{` block `}`]... `else` `{` block `}`]
     IfStatement(Vec<IfType>),
 
-    /// `for` expr `{` block `}`
-    ForStatement(Expression, Block),
+    /// `for` `(` expr `;` expr `;` expr `)` `{` block `}`
+    ForStatement(Expression, Expression, Expression, Block),
 
     /// `while` expr `{` block `}`
     WhileStatement(Expression, Block),
@@ -100,12 +100,17 @@ impl Statement {
                                 return Err(CompileError::unexpected_token(&token));
                             }
 
-                            // TODO:
-                            let expr = Expression::parse(tokens, &[TokenType::Symbol('{')])?;
+                            expect_symbol(tokens, '(')?;
+                            let init = Expression::parse(tokens, &[TokenType::Symbol(';')])?;
+                            expect_symbol(tokens, ';')?;
+                            let cond = Expression::parse(tokens, &[TokenType::Symbol(';')])?;
+                            expect_symbol(tokens, ';')?;
+                            let step = Expression::parse(tokens, &[TokenType::Symbol(')')])?;
+                            expect_symbol(tokens, ')')?;
 
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
-                            return Ok(Self::ForStatement(expr, block));
+                            return Ok(Self::ForStatement(init, cond, step, block));
                         }
 
                         Keyword::Declare => {
