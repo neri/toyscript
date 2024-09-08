@@ -1,8 +1,8 @@
 use crate::*;
-use asm::expr::ConstExpr;
 use ast::global::GlobalType;
 use ir::{export::ExportDesc, index::*, types::IdType, Module, WasmSectionId};
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
+use wasm::expr::ConstExpr;
 
 #[derive(Default)]
 pub struct Globals(pub(super) Vec<Global>);

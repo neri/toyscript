@@ -4,7 +4,7 @@ use super::data::Offset;
 use super::identifier::{Identifier, IndexToken};
 use super::{keyword::Keyword, ModuleName};
 use crate::*;
-use asm::expr::ConstExpr;
+use wasm::expr::ConstExpr;
 
 /// (`elem` _id_? _offset_ _elemlist_)`
 #[derive(Debug)]

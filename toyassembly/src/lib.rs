@@ -6,12 +6,12 @@ extern crate alloc;
 #[cfg(test)]
 pub mod tests;
 
-pub mod asm;
 pub mod ast;
 pub mod error;
 pub mod ir;
 pub mod token;
 pub mod types;
+pub mod wasm;
 
 #[path = "keyword/_keyword.rs"]
 pub mod keyword;

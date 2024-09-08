@@ -1,7 +1,7 @@
 use crate::*;
-use asm::expr::ConstExpr;
 use ir::{index::FuncIndex, Module, WasmSectionId};
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
+use wasm::expr::ConstExpr;
 
 #[derive(Default)]
 pub struct Elems(pub(super) Vec<Elem>);

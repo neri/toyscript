@@ -1,11 +1,11 @@
 //! Function section
 use super::{identifier::Identifier, keyword::Keyword, ModuleName};
 use crate::*;
-use asm::code::Code;
 use ast::{
     types::{ExtVis, FuncTypeLocal, IdAndValtype, TypeUse},
     *,
 };
+use wasm::code::Code;
 
 /// (`func` _id_? _imports_? _exports_? _typeuse_ (_local_)* (_instr_)*)
 #[derive(Debug)]

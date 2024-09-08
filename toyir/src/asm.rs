@@ -1,7 +1,6 @@
 //! ToyIR Assembler
 
-use super::*;
-use crate::types::index::LocalIndex;
+use crate::*;
 use core::{
     error::Error,
     mem::transmute,
@@ -244,33 +243,29 @@ impl CodeStream<'_> {
 
     /// %result = local_get $idx
     #[inline]
-    pub fn ir_local_get(&mut self, localidx: LocalIndex) {
+    pub fn ir_local_get(&mut self, localidx: u32) {
         let result = self.current_index();
         self.push_vs(result);
-        self.emit(Op::LocalGet, &[result.into(), Operand::U32(localidx.get())]);
+        self.emit(Op::LocalGet, &[result.into(), localidx.into()]);
     }
 
-    /// local_get %value, $idx
+    /// local_set %value, $idx
     #[inline]
-    pub fn ir_local_set(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
+    pub fn ir_local_set(&mut self, localidx: u32) -> Result<(), AssembleError> {
         let result = self.pop_vs()?;
-        self.emit(Op::LocalSet, &[result.into(), Operand::U32(localidx.get())]);
+        self.emit(Op::LocalSet, &[result.into(), localidx.into()]);
         Ok(())
     }
 
     /// %result = local_tee $idx, %value
     #[inline]
-    pub fn ir_local_tee(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
+    pub fn ir_local_tee(&mut self, localidx: u32) -> Result<(), AssembleError> {
         let result = self.current_index();
         let ssa_index = self.pop_vs()?;
         self.push_vs(result);
         self.emit(
             Op::LocalTee,
-            &[
-                result.into(),
-                Operand::U32(localidx.get()),
-                ssa_index.into(),
-            ],
+            &[result.into(), localidx.into(), ssa_index.into()],
         );
         Ok(())
     }
@@ -282,7 +277,7 @@ impl CodeStream<'_> {
         Ok(())
     }
 
-    /// %result = call ($params, ...)
+    /// %result = call $params, ...
     pub fn ir_call(
         &mut self,
         target: usize,
@@ -304,7 +299,7 @@ impl CodeStream<'_> {
         Ok(())
     }
 
-    /// result %value
+    /// return %value
     pub fn ir_return(&mut self) -> Result<(), AssembleError> {
         let mut results = Vec::new();
         for _ in 0..self.codes.resule_size {
@@ -322,6 +317,45 @@ impl CodeStream<'_> {
         self.push_vs(result);
         self.emit(Op::Eqz, &[result.into(), operand.into(), 0.into()]);
         Ok(())
+    }
+
+    /// Pseudo-instruction to reverse the sign
+    ///
+    /// TODO: support for f32.neg and f64.neg
+    pub fn ir_neg<F, R, E>(&mut self, kernel: F) -> Result<R, E>
+    where
+        F: FnOnce(&mut Self) -> Result<(Primitive, R), E>,
+        E: From<AssembleError>,
+    {
+        let patch_point = self.codes.buf.len();
+        self.ir_i64_const(0);
+
+        let result = kernel(self)?;
+
+        let patch_op = match result.0 {
+            Primitive::Bool
+            | Primitive::I8
+            | Primitive::U8
+            | Primitive::I16
+            | Primitive::U16
+            | Primitive::I32
+            | Primitive::U32 => Op::I32Const,
+
+            Primitive::I64 | Primitive::U64 => Op::I64Const,
+
+            Primitive::F32 => Op::F32Const,
+
+            Primitive::F64 => Op::F64Const,
+
+            Primitive::Void => return Err(AssembleError::InvalidPrimitive.into()),
+        };
+
+        self.emit_binop(Op::Sub)?;
+
+        self.codes.buf[patch_point] =
+            (self.codes.buf[patch_point] & 0xFFFF_0000) | (patch_op as u32);
+
+        Ok(result.1)
     }
 }
 
@@ -442,26 +476,6 @@ macro_rules! ir_no_params {
 ir_no_params! {
     ir_unreachable: Unreachable;
     ir_nop: Nop;
-}
-
-macro_rules! ir_unops {
-    {$( $func_name:ident: $op:ident; )*} => {
-        impl CodeStream<'_> {
-            $(
-                #[inline]
-                pub fn $func_name(&mut self) -> Result<(), AssembleError> {
-                    self.emit_unop(Op::$op)
-                }
-            )*
-        }
-    };
-}
-
-ir_unops! {
-    ir_neg: Neg;
-    ir_not: Not;
-    ir_inc: Inc;
-    ir_dec: Dec;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

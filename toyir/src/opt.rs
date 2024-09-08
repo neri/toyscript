@@ -166,7 +166,6 @@ impl MinimalCodeOptimizer {
                     | Op::LocalSet
                     | Op::LocalTee
                     | Op::Loop
-                    | Op::Neg
                     | Op::Not
                     | Op::Popcnt => {}
                 }
@@ -355,7 +354,6 @@ impl MinimalCodeOptimizer {
                     | Op::Dec
                     | Op::Eqz
                     | Op::Inc
-                    | Op::Neg
                     | Op::Not
                     | Op::Popcnt => {
                         for i in 1..=2 {
@@ -491,7 +489,6 @@ impl MinimalCodeOptimizer {
             | Op::Dec
             | Op::Eqz
             | Op::Inc
-            | Op::Neg
             | Op::Not
             | Op::Popcnt => {
                 self.chain_drop(CodeIndex(self.param(base, len, 2)?))?;
@@ -571,7 +568,7 @@ impl MinimalCodeOptimizer {
                     Op::Rotl => lhs.rotate_left(rhs as u32),
                     Op::Rotr => lhs.rotate_right(rhs as u32),
 
-                    _ => unreachable!(),
+                    _ => return Ok(false),
                 };
                 self.replace_nop(lhs_a)?;
                 self.replace_nop(rhs_a)?;
@@ -733,17 +730,17 @@ impl MinimalCodeOptimizer {
         self.replace(target, Op::I32Const, &[result.0, value as u32])
     }
 
-    fn replace_i64_const(
-        &mut self,
-        target: ArrayIndex,
-        result: CodeIndex,
-        value: i64,
-    ) -> Result<(), OptimizeError> {
-        let value = value as u64;
-        let l = value as u32;
-        let h = (value >> 32) as u32;
-        self.replace(target, Op::I64Const, &[result.0, l, h])
-    }
+    // fn replace_i64_const(
+    //     &mut self,
+    //     target: ArrayIndex,
+    //     result: CodeIndex,
+    //     value: i64,
+    // ) -> Result<(), OptimizeError> {
+    //     let value = value as u64;
+    //     let l = value as u32;
+    //     let h = (value >> 32) as u32;
+    //     self.replace(target, Op::I64Const, &[result.0, l, h])
+    // }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

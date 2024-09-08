@@ -1,10 +1,10 @@
+//! ToyScript
 #![cfg_attr(not(test), no_std)]
 
 pub mod ast;
 pub mod cg;
 pub mod error;
 pub mod keyword;
-pub mod tir;
 pub mod types;
 
 #[cfg(test)]

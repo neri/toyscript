@@ -1,16 +1,28 @@
 //! ToyIR: ToyScript Intermediate Representation
+#![cfg_attr(not(test), no_std)]
 
-mod _opcode;
+#[path = "opcode/_irop.rs"]
+mod _irop;
+pub use _irop::*;
+
+#[path = "primitive/_primitive.rs"]
+mod _primitive;
+pub use _primitive::*;
+
 mod asm;
 mod function;
 mod module;
-pub use _opcode::*;
 pub use asm::*;
 pub use function::*;
 pub use module::*;
 
 pub mod error;
 pub mod opt;
+
+#[cfg(test)]
+pub mod tests;
+
+extern crate alloc;
 
 #[allow(unused)]
 use alloc::{

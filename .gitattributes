@@ -1,9 +1,9 @@
 tests/* linguist-vendored
 tools/* linguist-vendored
 docs/* linguist-documentation
-toyassembly/src/asm/opcode.rs linguist-generated
 toyassembly/src/keyword/_keyword.rs linguist-generated
 toyassembly/src/types/_valtype.rs linguist-generated
-toyscript/src/tir/_opcode.rs linguist-generated
+toyassembly/src/wasm/opcode.rs linguist-generated
+toyir/src/opcode/_opcode.rs linguist-generated
+toyir/src/primitive/_primitive.rs linguist-generated
 toyscript/src/keyword/_keyword.rs linguist-generated
-toyscript/src/types/_primitive.rs linguist-generated

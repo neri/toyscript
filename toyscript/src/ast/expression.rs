@@ -881,8 +881,8 @@ impl BinaryOperator {
         )
     }
 
-    pub fn to_ir(&self, is_signed: bool) -> tir::Op {
-        use tir::Op;
+    pub fn to_ir(&self, is_signed: bool) -> toyir::Op {
+        use toyir::Op;
         let (sop, uop) = match self {
             Self::Identical => (Op::Eq, Op::Eq),
             Self::NotIdentical => (Op::Ne, Op::Ne),

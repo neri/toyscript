@@ -1,7 +1,7 @@
 use crate::{ast::identifier::Identifier, *};
 use core::cmp;
-use tir::error::AssembleError;
 use token::{TokenError, TokenPosition};
+use toyir::error::AssembleError;
 
 #[derive(Debug)]
 pub struct CompileError {

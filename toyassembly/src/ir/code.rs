@@ -1,9 +1,9 @@
 use super::Module;
 use crate::*;
-use asm::code::Code;
 use ir::{index::LocalIndex, WasmSectionId};
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
 use types::ValType;
+use wasm::code::Code;
 
 #[derive(Default)]
 pub struct Codes(pub(super) Vec<FuncCode>);

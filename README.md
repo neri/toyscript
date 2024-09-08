@@ -33,6 +33,7 @@ A Lightweight toy language environment with high affinity for WebAssembly
 | `tsc/`         | ToyScript CLI Frontend   |
 | `tas/`         | ToyAssembly CLI Frontend |
 | `toyscript/`   | ToyScript Backend        |
+| `toyir/`       | ToyIR Backend            |
 | `toyassembly/` | ToyAssembly Backend      |
 
 ## License

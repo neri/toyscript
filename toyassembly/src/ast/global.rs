@@ -2,10 +2,10 @@
 
 use super::{keyword::Keyword, ModuleName};
 use crate::*;
-use asm::expr::ConstExpr;
 use ast::{types::ExtVis, *};
 use identifier::Identifier;
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
+use wasm::expr::ConstExpr;
 
 /// (`global` _id_? _import_? _export_? _globaltype_ _expr_)`
 #[derive(Debug)]

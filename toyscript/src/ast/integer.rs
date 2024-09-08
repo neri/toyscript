@@ -1,4 +1,4 @@
-use crate::types::Primitive;
+use toyir::Primitive;
 
 #[derive(Clone, Copy)]
 pub enum Integer {

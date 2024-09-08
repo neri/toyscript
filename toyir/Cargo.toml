@@ -1,5 +1,5 @@
 [package]
-name = "toyscript"
+name = "toyir"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
@@ -12,7 +12,5 @@ alloc = []
 std = ["alloc"]
 
 [dependencies]
-token = { path = "../lib/token" }
-toyir = { path = "../toyir" }
+toyassembly = { path = "../toyassembly" }
 leb128 = { path = "../lib/leb128" }
-# toyassembly = { path = "../toyassembly" }

@@ -1,7 +1,6 @@
 //! Normal code block
 
 use crate::*;
-use asm::opcode::WasmOpcode;
 use ast::{
     identifier::{Identifier, IndexToken},
     literal::NumericLiteral,
@@ -11,6 +10,7 @@ use ast::{
 use ir::{index::*, Module};
 use leb128::{Leb128Writer, WriteLeb128};
 use types::ValType;
+use wasm::opcode::WasmOpcode;
 
 #[derive(Debug)]
 pub enum Code {

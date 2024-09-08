@@ -6,13 +6,10 @@ use function::FunctionDescriptor;
 use index::FuncIndex;
 use keyword::ModifierFlag;
 use token::TokenPosition;
+use toyir::Primitive;
 
-mod _primitive;
 pub mod function;
 pub mod index;
-pub use _primitive::*;
-
-pub const BUILTIN_BOOL: &str = "bool";
 
 pub const BUILTIN_BOOLEAN: &str = "boolean";
 
@@ -220,11 +217,6 @@ impl TypeSystem {
         self.resolve(primitive.as_str()).unwrap()
     }
 
-    // #[inline]
-    // pub fn builtin_bool(&self) -> Arc<TypeDescriptor> {
-    //     self.get(BUILTIN_BOOL).map(|v| v.clone()).unwrap()
-    // }
-
     #[inline]
     pub fn builtin_boolean(&self) -> Arc<TypeDescriptor> {
         self.get(BUILTIN_BOOLEAN).map(|v| v.clone()).unwrap()
@@ -275,19 +267,11 @@ impl TypeSystem {
     ///
     /// This function only works correctly once.
     #[inline]
-    pub fn set_data_model(&mut self, integer_bits: usize, pointer_bits: usize) -> Result<(), ()> {
+    fn set_data_model(&mut self, integer_bits: usize, pointer_bits: usize) -> Result<(), ()> {
         let type_int = Primitive::int_for_bits(integer_bits)?;
-        let type_uint = Primitive::unsigned_int_for_bits(integer_bits)?;
+        let type_uint = Primitive::uint_for_bits(integer_bits)?;
         let type_isize = Primitive::int_for_bits(pointer_bits)?;
-        let type_usize = Primitive::unsigned_int_for_bits(pointer_bits)?;
-
-        #[cfg(test)]
-        {
-            assert_eq!(type_int.bits_of(), integer_bits);
-            assert_eq!(type_uint.bits_of(), integer_bits);
-            assert_eq!(type_isize.bits_of(), pointer_bits);
-            assert_eq!(type_usize.bits_of(), pointer_bits);
-        }
+        let type_usize = Primitive::uint_for_bits(pointer_bits)?;
 
         self.make_primitive_alias(BUILTIN_INT, type_int)?;
         self.make_primitive_alias(BUILTIN_UINT, type_uint)?;
@@ -305,11 +289,7 @@ impl TypeSystem {
     }
 
     #[inline]
-    pub fn make_primitive_alias(
-        &mut self,
-        identifier: &str,
-        primitive: Primitive,
-    ) -> Result<(), ()> {
+    fn make_primitive_alias(&mut self, identifier: &str, primitive: Primitive) -> Result<(), ()> {
         if self.get(identifier).is_some() {
             return Err(());
         }
@@ -498,6 +478,7 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
             TypeKind::Primitive(_) => Some(desc.clone()),
             TypeKind::Alias(alias) => self.resolve(alias),
             TypeKind::Reference(_) => Some(desc.clone()),
+            TypeKind::Optional(_) => Some(desc.clone()),
         }
     }
 
@@ -506,51 +487,7 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
             TypeKind::Primitive(primitive) => Some(*primitive),
             TypeKind::Alias(alias) => self.resolve_primitive(alias),
             TypeKind::Reference(_) => Some(self.type_usize),
-        }
-    }
-}
-
-impl Primitive {
-    pub fn int_for_bits(bits: usize) -> Result<Self, ()> {
-        match bits {
-            8 => Ok(Primitive::I8),
-            16 => Ok(Primitive::I16),
-            32 => Ok(Primitive::I32),
-            64 => Ok(Primitive::I64),
-            _ => Err(()),
-        }
-    }
-
-    pub fn unsigned_int_for_bits(bits: usize) -> Result<Self, ()> {
-        match bits {
-            8 => Ok(Primitive::U8),
-            16 => Ok(Primitive::U16),
-            32 => Ok(Primitive::U32),
-            64 => Ok(Primitive::U64),
-            _ => Err(()),
-        }
-    }
-
-    pub const fn bits_of(&self) -> usize {
-        match self {
-            Primitive::Bool => 1,
-            Primitive::I8 | Primitive::U8 => 8,
-            Primitive::I16 | Primitive::U16 => 16,
-            Primitive::F32 | Primitive::I32 | Primitive::U32 => 32,
-            Primitive::F64 | Primitive::I64 | Primitive::U64 => 64,
-            Primitive::Void => 0,
-        }
-    }
-
-    pub const fn is_signed(&self) -> bool {
-        match self {
-            Primitive::F32
-            | Primitive::F64
-            | Primitive::I16
-            | Primitive::I32
-            | Primitive::I64
-            | Primitive::I8 => true,
-            _ => false,
+            TypeKind::Optional(_) => Some(self.type_usize),
         }
     }
 }
@@ -685,7 +622,7 @@ pub enum TypeKind {
     Primitive(Primitive),
     Alias(Arc<TypeDescriptor>),
     Reference(Arc<TypeDescriptor>),
-    //Optional(T),
+    Optional(Arc<TypeDescriptor>),
     //Class(T),
     //Function(T),
 }
@@ -699,6 +636,7 @@ impl core::fmt::Debug for TypeKind {
                 .debug_tuple("Reference")
                 .field(&arg0.identifier())
                 .finish(),
+            Self::Optional(arg0) => f.debug_tuple("Optional").field(&arg0.identifier()).finish(),
         }
     }
 }

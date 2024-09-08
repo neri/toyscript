@@ -1,10 +1,10 @@
 //! Constant Expression
 
 use crate::*;
-use asm::opcode::WasmOpcode;
 use ast::literal::NumericLiteral;
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
 use types::ValType;
+use wasm::opcode::WasmOpcode;
 
 #[derive(Debug)]
 pub struct ConstExpr(Vec<ConstInstr>);

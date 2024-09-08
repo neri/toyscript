@@ -2,10 +2,10 @@
 
 use super::{keyword::Keyword, ModuleName};
 use crate::*;
-use asm::expr::ConstExpr;
 use ast::*;
 use literal::RawBytesLiteral;
 use memory::MemUse;
+use wasm::expr::ConstExpr;
 
 /// (`data` _memuse?_ (`offset`? _instr_) _datastring_* )`
 pub struct Data {

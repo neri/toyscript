@@ -2,6 +2,7 @@ use core::error::Error;
 use core::fmt;
 
 pub enum AssembleError {
+    InvalidPrimitive,
     InvalidParameter,
     OutOfBlockStack,
     OutOfValueStack,
@@ -35,6 +36,7 @@ impl fmt::Debug for AssembleError {
 impl fmt::Display for AssembleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidPrimitive => write!(f, "InvalidPrimitive"),
             Self::InvalidParameter => write!(f, "InvalidParameter"),
             Self::OutOfBlockStack => write!(f, "OutOfBlockStack"),
             Self::OutOfValueStack => write!(f, "OutOfValueStack"),

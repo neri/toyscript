@@ -17,14 +17,14 @@ fn main() {
 
     {
         let mut lines = Vec::new();
-        for line in read_to_string("./src/asm/opcode.csv").unwrap().lines() {
+        for line in read_to_string("./src/wasm/opcode.csv").unwrap().lines() {
             if !line.is_empty() && !line.starts_with("#") {
                 lines.push(line.to_string());
             }
         }
-        let mut os = File::create("./src/asm/opcode.rs").unwrap();
+        let mut os = File::create("./src/wasm/opcode.rs").unwrap();
         let opcodes = make_opcode(&mut os, lines.as_slice());
-        println!("cargo:rerun-if-changed=./src/asm/opcode.csv");
+        println!("cargo:rerun-if-changed=./src/wasm/opcode.csv");
 
         make_enum(
             "./src/keyword/keyword.txt",
