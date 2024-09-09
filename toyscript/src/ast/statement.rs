@@ -48,6 +48,12 @@ pub enum Statement {
 
     /// expression
     Expression(Expression),
+
+    /// `break`
+    Break(TokenPosition),
+
+    /// `continue`
+    Continue(TokenPosition),
 }
 
 #[derive(Debug)]
@@ -191,6 +197,20 @@ impl Statement {
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
                             return Ok(Self::WhileStatement(expr, block));
+                        }
+                        Keyword::Break => {
+                            if !modifiers.is_empty() {
+                                return Err(CompileError::unexpected_token(&token));
+                            }
+                            expect_eol(tokens)?;
+                            return Ok(Self::Break(token.position()));
+                        }
+                        Keyword::Continue => {
+                            if !modifiers.is_empty() {
+                                return Err(CompileError::unexpected_token(&token));
+                            }
+                            expect_eol(tokens)?;
+                            return Ok(Self::Continue(token.position()));
                         }
                         _ => {
                             if !modifiers.is_empty() {

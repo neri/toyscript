@@ -10,7 +10,7 @@ use ast::{
     statement::{IfType, Statement},
 };
 use keyword::ModifierFlag;
-use scope::{VariableDescriptor, VariableScope, VariableStorage};
+use scope::{Scope, VariableDescriptor, VariableStorage};
 use token::TokenPosition;
 use toyir::{self, Primitive};
 use types::{InferredType, Resolve, TypeDescriptor};
@@ -40,6 +40,8 @@ impl CodeGen {
                 Statement::Eof(_) | Statement::TypeAlias(_, _) => (),
 
                 Statement::Block(_)
+                | Statement::Break(_)
+                | Statement::Continue(_)
                 | Statement::Class(_)
                 | Statement::Expression(_)
                 | Statement::IfStatement(_)
@@ -81,7 +83,7 @@ impl CodeGen {
             let block_type = Self::process_block(
                 &mut codes.stream(),
                 func_decl.body(),
-                &mut scope.scoped(),
+                &mut scope.scoped(None, None),
                 &return_type,
             )?;
 
@@ -165,7 +167,7 @@ impl CodeGen {
     fn process_block(
         codes: &mut toyir::CodeStream,
         block: &Block,
-        scope: &mut VariableScope,
+        scope: &mut Scope,
         return_type: &Arc<TypeDescriptor>,
     ) -> Result<Option<Arc<TypeDescriptor>>, CompileError> {
         let builtin_boolean = scope.types().builtin_boolean();
@@ -212,7 +214,7 @@ impl CodeGen {
                 }
 
                 Statement::Block(block) => {
-                    let mut scope = scope.scoped();
+                    let mut scope = scope.scoped(None, None);
                     let child_block_type =
                         Self::process_block(codes, block, &mut scope, return_type)?;
                     let child_block_type = scope.types().canonical(child_block_type.as_ref());
@@ -236,7 +238,7 @@ impl CodeGen {
                     for if_type in if_types {
                         match if_type {
                             IfType::If(expr, block) => {
-                                let mut scope = scope.scoped();
+                                let mut scope = scope.scoped(None, None);
 
                                 Self::process_expression(
                                     codes,
@@ -275,7 +277,7 @@ impl CodeGen {
                                 }
                             }
                             IfType::ElseIf(expr, block) => {
-                                let mut scope = scope.scoped();
+                                let mut scope = scope.scoped(None, None);
 
                                 Self::process_expression(
                                     codes,
@@ -306,7 +308,7 @@ impl CodeGen {
                             }
                             IfType::Else(block) => {
                                 has_else = true;
-                                let mut scope = scope.scoped();
+                                let mut scope = scope.scoped(None, None);
                                 let child_block_type =
                                     Self::process_block(codes, block, &mut scope, return_type)?;
                                 let child_block_type =
@@ -329,7 +331,7 @@ impl CodeGen {
                 Statement::WhileStatement(expr, block) => {
                     let break_index = codes.ir_block();
                     let loop_index = codes.ir_loop();
-                    let mut scope = scope.scoped();
+                    let mut scope = scope.scoped(Some(break_index), Some(loop_index));
 
                     Self::process_expression(codes, expr, Some(&builtin_boolean), &mut scope)?;
                     codes.ir_invert()?;
@@ -370,6 +372,24 @@ impl CodeGen {
                     has_to_break = true;
                 }
 
+                Statement::Break(position) => {
+                    if let Some(target) = scope.break_index() {
+                        codes.ir_br(target)?;
+                        has_to_break = true;
+                    } else {
+                        return Err(CompileError::out_of_context("", *position));
+                    }
+                }
+
+                Statement::Continue(position) => {
+                    if let Some(target) = scope.continue_index() {
+                        codes.ir_br(target)?;
+                        has_to_break = true;
+                    } else {
+                        return Err(CompileError::out_of_context("", *position));
+                    }
+                }
+
                 Statement::ForStatement(_, _, _, _)
                 | Statement::Enum(_)
                 | Statement::TypeAlias(_, _)
@@ -395,7 +415,7 @@ impl CodeGen {
         codes: &mut toyir::CodeStream,
         expr: &Expression,
         expected_type: Option<&Arc<TypeDescriptor>>,
-        scope: &VariableScope,
+        scope: &Scope,
     ) -> Result<Option<Arc<TypeDescriptor>>, CompileError> {
         let (item, result_type) = Self::infer_unary(
             &expected_type
@@ -411,7 +431,7 @@ impl CodeGen {
     fn infer_unary(
         inferred_to: &InferredType,
         item: &Unary,
-        scope: &VariableScope,
+        scope: &Scope,
     ) -> Result<(Unary, InferredType), CompileError> {
         match item {
             Unary::Void(_) => {
@@ -612,7 +632,7 @@ impl CodeGen {
     fn generate_unary(
         codes: &mut toyir::CodeStream,
         item: &Unary,
-        scope: &VariableScope,
+        scope: &Scope,
     ) -> Result<InferredType, CompileError> {
         match item {
             Unary::Void(_) => Ok(InferredType::Inferred(scope.types().builtin_void())),

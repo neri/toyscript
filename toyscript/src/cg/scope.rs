@@ -1,6 +1,7 @@
 use crate::*;
 use ast::function::Parameter;
 use token::TokenPosition;
+use toyir::BlockIndex;
 use types::{index::LocalIndex, InferredType, TypeDescriptor};
 
 #[derive(Debug)]
@@ -9,10 +10,12 @@ pub struct VariableStorage<'a> {
     variables: RefCell<Vec<VariableDescriptor>>,
 }
 
-pub struct VariableScope<'a> {
+pub struct Scope<'a> {
     storage: &'a VariableStorage<'a>,
-    parent: Option<&'a VariableScope<'a>>,
+    parent: Option<&'a Scope<'a>>,
     variables: Vec<(String, LocalIndex)>,
+    break_index: Option<BlockIndex>,
+    continue_index: Option<BlockIndex>,
 }
 
 impl<'a> VariableStorage<'a> {
@@ -32,8 +35,8 @@ impl VariableStorage<'_> {
     }
 
     #[inline]
-    pub fn root_scope<'a>(&'a self) -> VariableScope<'a> {
-        VariableScope::root(self)
+    pub fn root_scope<'a>(&'a self) -> Scope<'a> {
+        Scope::root(self)
     }
 
     pub fn register_local(&self, mut var_desc: VariableDescriptor) -> LocalIndex {
@@ -64,27 +67,35 @@ impl VariableStorage<'_> {
     }
 }
 
-impl<'a> VariableScope<'a> {
+impl<'a> Scope<'a> {
     #[inline]
     pub fn root(storage: &'a VariableStorage) -> Self {
         Self {
             storage,
             parent: None,
             variables: Vec::new(),
+            break_index: None,
+            continue_index: None,
         }
     }
 
     #[inline]
-    pub fn scoped(&'a self) -> Self {
+    pub fn scoped(
+        &'a self,
+        break_index: Option<BlockIndex>,
+        continue_index: Option<BlockIndex>,
+    ) -> Self {
         Self {
             storage: self.storage,
             parent: Some(self),
             variables: Vec::new(),
+            break_index: break_index.or(self.break_index),
+            continue_index: continue_index.or(self.continue_index),
         }
     }
 }
 
-impl VariableScope<'_> {
+impl Scope<'_> {
     #[inline]
     pub fn types(&self) -> &TypeSystem {
         self.storage.types
@@ -93,6 +104,16 @@ impl VariableScope<'_> {
     #[inline]
     pub fn parent(&self) -> Option<&Self> {
         self.parent
+    }
+
+    #[inline]
+    pub fn break_index(&self) -> Option<BlockIndex> {
+        self.break_index
+    }
+
+    #[inline]
+    pub fn continue_index(&self) -> Option<BlockIndex> {
+        self.continue_index
     }
 
     #[inline]
