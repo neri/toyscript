@@ -34,6 +34,26 @@ impl MinimalCodeOptimizer {
 
     fn _optimize(&mut self) -> Result<(), OptimizeError> {
         {
+            // Reduce wasted instructions that lead to DROP instructions first to shorten optimization time.
+            let mut ci = 0;
+            while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                ci += 1;
+                let (len, opcode) = self.get_op(base)?;
+
+                match opcode {
+                    Op::Drop => {
+                        let operand = CodeIndex(self.param(base, len, 1)?);
+                        if self.chain_drop(operand)? {
+                            self.replace_nop(base)?;
+                        }
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
+        {
             // Reduce unnecessary operations
             let mut ci = 0;
             let mut skip_until_end = false;
@@ -578,39 +598,81 @@ impl MinimalCodeOptimizer {
             _ => {}
         }
 
-        // binop (???, 0)
-        if rhs_const == Some(Constant::I32(0)) {
-            match opcode {
-                Op::Eq => {
-                    self.replace_nop(rhs_a)?;
-                    self.replace(base, Op::Eqz, &[result.0, lhs.0])?;
-                    return Ok(true);
-                }
-                Op::Add
-                | Op::Sub
-                | Op::Or
-                | Op::Xor
-                | Op::Shl
-                | Op::ShrS
-                | Op::ShrU
-                | Op::Rotl
-                | Op::Rotr => {
-                    self.replace_nop(rhs_a)?;
-                    self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
-                    return Ok(true);
-                }
-                Op::Mul | Op::And => {
-                    if self.chain_drop(lhs)? {
+        if let Some(Constant::I32(rhs_const)) = rhs_const {
+            // binop (???, 0)
+            if rhs_const == 0 {
+                match opcode {
+                    Op::Eq => {
                         self.replace_nop(rhs_a)?;
-                    } else {
-                        self.replace(rhs_a, Op::Drop, &[lhs.0])?;
+                        self.replace(base, Op::Eqz, &[result.0, lhs.0])?;
+                        return Ok(true);
                     }
-                    self.replace_i32_const(base, result, 0)?;
-                    return Ok(true);
+                    Op::Add
+                    | Op::Sub
+                    | Op::Or
+                    | Op::Xor
+                    | Op::Shl
+                    | Op::ShrS
+                    | Op::ShrU
+                    | Op::Rotl
+                    | Op::Rotr => {
+                        self.replace_nop(rhs_a)?;
+                        self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                        return Ok(true);
+                    }
+                    Op::Mul | Op::And => {
+                        if self.chain_drop(lhs)? {
+                            self.replace_nop(rhs_a)?;
+                        } else {
+                            self.replace(rhs_a, Op::Drop, &[lhs.0])?;
+                        }
+                        self.replace_i32_const(base, result, 0)?;
+                        return Ok(true);
+                    }
+                    // TODO: cannot convert NaN
+                    Op::DivS | Op::DivU | Op::RemS | Op::RemU => return Ok(false),
+                    _ => {}
                 }
-                // TODO: cannot convert NaN
-                Op::DivS | Op::DivU | Op::RemS | Op::RemU => return Ok(false),
-                _ => {}
+            }
+
+            {
+                // mul or div (???, const (power of two))
+                let rhs_const = rhs_const as u32;
+                if rhs_const.next_power_of_two() == rhs_const {
+                    match opcode {
+                        Op::Mul => {
+                            if rhs_const == 1 {
+                                self.replace_nop(rhs_a)?;
+                                self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                            } else {
+                                self.replace_i32_const(
+                                    rhs_a,
+                                    rhs,
+                                    rhs_const.trailing_zeros() as i32,
+                                )?;
+                                self.replace_opcode(base, Op::Shl)?;
+                            }
+                        }
+                        Op::DivU => {
+                            if rhs_const == 1 {
+                                self.replace_nop(rhs_a)?;
+                                self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                            } else {
+                                self.replace_i32_const(
+                                    rhs_a,
+                                    rhs,
+                                    rhs_const.trailing_zeros() as i32,
+                                )?;
+                                self.replace_opcode(base, Op::ShrU)?;
+                            }
+                        }
+                        Op::RemU => {
+                            self.replace_i32_const(rhs_a, rhs, rhs_const.wrapping_sub(1) as i32)?;
+                            self.replace_opcode(base, Op::And)?;
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
 

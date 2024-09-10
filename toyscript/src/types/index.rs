@@ -35,4 +35,3 @@ decl_index!(FuncIndex, Func);
 decl_index!(TableIndex, Table);
 decl_index!(MemoryIndex, Memory);
 decl_index!(GlobalIndex, Global);
-decl_index!(LocalIndex, Local);

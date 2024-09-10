@@ -69,19 +69,46 @@ impl CodeGen {
         let var_storage = VariableStorage::new(types);
         let mut scope = var_storage.root_scope();
 
-        for (param, type_desc) in func_decl.parameters().iter().zip(func_desc.param_types()) {
-            let var = VariableDescriptor::from_parameter(param, type_desc);
-            scope.declare_local(var)?;
-        }
+        let signature = func_desc.signature();
+        let exports = (func_desc.modifiers().contains(ModifierFlag::EXPORT))
+            .then(|| func_desc.identifier().as_str());
 
         let return_type = func_desc.result_type().clone();
 
-        let codes = if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
-            toyir::Assembler::new(0)
+        let mut builder = toyir::Function::new(
+            signature,
+            exports,
+            return_type
+                .primitive_type()
+                .map(|v| (return_type.identifier(), v)),
+        )?;
+
+        for (param, type_desc) in func_decl.parameters().iter().zip(func_desc.param_types()) {
+            let mut var = VariableDescriptor::from_parameter(param, type_desc);
+            let infered_type = var
+                .inferred_type()
+                .pessimistic_type()
+                .ok_or(CompileError::could_not_infer(var.identifier()))?;
+            let primitive_type =
+                infered_type
+                    .primitive_type()
+                    .ok_or(CompileError::invalid_type(&Identifier::new(
+                        infered_type.identifier(),
+                        TokenPosition((0, 0)),
+                    )))?;
+            var.set_index(builder.declare_param(
+                &var.identifier().as_string(),
+                infered_type.identifier(),
+                primitive_type,
+            )?);
+            scope.declare_local(var)?;
+        }
+
+        let function = if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
+            unreachable!()
         } else {
-            let mut codes = toyir::Assembler::new(if return_type.is_special() { 0 } else { 1 });
             let block_type = Self::process_block(
-                &mut codes.stream(),
+                &mut builder.assembler(),
                 func_decl.body(),
                 &mut scope.scoped(None, None),
                 &return_type,
@@ -105,7 +132,24 @@ impl CodeGen {
                 }
             }
 
-            codes.finalize().map_err(|err| {
+            for var_desc in var_storage
+                .into_vars()
+                .iter()
+                .skip(func_desc.param_types().len())
+            {
+                let type_desc = var_desc
+                    .optimistic_inferred_type()
+                    .ok_or(CompileError::could_not_infer(var_desc.identifier()))?;
+                builder.declare_local(
+                    var_desc.index(),
+                    &var_desc.identifier().as_string(),
+                    type_desc.identifier(),
+                    type_desc.primitive_type().unwrap_or(Primitive::Void),
+                    var_desc.is_mutable(),
+                )?;
+            }
+
+            builder.build().map_err(|err| {
                 CompileError::internal_inconsistency(
                     &format!("Internal Assembler Error: {:?}", err),
                     ErrorPosition::Unspecified,
@@ -113,59 +157,11 @@ impl CodeGen {
             })?
         };
 
-        let signature = func_desc.signature();
-        let exports = (func_desc.modifiers().contains(ModifierFlag::EXPORT))
-            .then(|| func_desc.identifier().as_str());
-
-        let mut params = Vec::new();
-        for (param, type_desc) in func_decl.parameters().iter().zip(func_desc.param_types()) {
-            params.push((
-                param.identifier().to_string(),
-                type_desc.identifier().to_owned(),
-                types
-                    .resolve_primitive(type_desc)
-                    .unwrap_or(Primitive::Void),
-            ));
-        }
-
-        let mut locals = Vec::new();
-        let vars = var_storage.into_vars();
-        let vars = vars.iter().skip(params.len());
-        for var in vars {
-            let type_desc = var
-                .optimistic_inferred_type()
-                .ok_or(CompileError::could_not_infer(var.identifier()))?;
-            locals.push((
-                var.identifier().to_string(),
-                type_desc.identifier().to_owned(),
-                types
-                    .resolve_primitive(type_desc)
-                    .unwrap_or(Primitive::Void),
-            ));
-        }
-
-        let mut results = Vec::new();
-        results.push((
-            return_type.identifier().to_owned(),
-            types
-                .resolve_primitive(return_type.identifier())
-                .unwrap_or(Primitive::Void),
-        ));
-
-        let function = toyir::Function::new(
-            signature,
-            exports,
-            params.as_slice(),
-            results.as_slice(),
-            locals.as_slice(),
-            codes,
-        )?;
-
         Ok(function)
     }
 
     fn process_block(
-        codes: &mut toyir::CodeStream,
+        asm: &mut toyir::FunctionAssembler,
         block: &Block,
         scope: &mut Scope,
         return_type: &Arc<TypeDescriptor>,
@@ -195,18 +191,22 @@ impl CodeGen {
                             None => None,
                         };
                         let mut var_desc = VariableDescriptor::from_var_decl(var_decl, type_desc);
+                        var_desc.set_index(asm.alloc_local());
+                        let localidx = var_desc.index();
+
                         let expected_type = var_desc.optimistic_inferred_type();
                         if let Some(expr) = var_decl.assignment() {
                             let expr_position = expr.position();
                             let expr_type =
-                                Self::process_expression(codes, expr, expected_type, scope)?;
+                                Self::process_expression(asm, expr, expected_type, scope)?;
 
                             if let Some(ref expr_type) = expr_type {
                                 var_desc.infer(expr_type, expr_position)?;
                             }
-                            let var_idx = scope.declare_local(var_desc)?;
 
-                            codes.ir_local_set(var_idx.get())?;
+                            scope.declare_local(var_desc)?;
+
+                            asm.ir_local_set(localidx)?;
                         } else {
                             scope.declare_local(var_desc)?;
                         }
@@ -216,7 +216,7 @@ impl CodeGen {
                 Statement::Block(block) => {
                     let mut scope = scope.scoped(None, None);
                     let child_block_type =
-                        Self::process_block(codes, block, &mut scope, return_type)?;
+                        Self::process_block(asm, block, &mut scope, return_type)?;
                     let child_block_type = scope.types().canonical(child_block_type.as_ref());
 
                     if child_block_type.is_never() {
@@ -226,10 +226,10 @@ impl CodeGen {
 
                 Statement::IfStatement(if_types) => {
                     let else_exists = if_types.len() > 1;
-                    let outer_block_index = codes.ir_block();
+                    let outer_block_index = asm.ir_block();
                     let mut block_indexes = Vec::new();
                     for _ in 1..if_types.len() {
-                        let block_index = codes.ir_block();
+                        let block_index = asm.ir_block();
                         block_indexes.push(block_index);
                     }
 
@@ -241,12 +241,12 @@ impl CodeGen {
                                 let mut scope = scope.scoped(None, None);
 
                                 Self::process_expression(
-                                    codes,
+                                    asm,
                                     expr,
                                     Some(&builtin_boolean),
                                     &mut scope,
                                 )?;
-                                codes.ir_invert()?;
+                                asm.ir_invert()?;
 
                                 let this_block = if else_exists {
                                     let this_block = block_indexes.pop().ok_or(
@@ -255,21 +255,21 @@ impl CodeGen {
                                             ErrorPosition::Unspecified,
                                         ),
                                     )?;
-                                    codes.ir_br_if(this_block)?;
+                                    asm.ir_br_if(this_block)?;
                                     Some(this_block)
                                 } else {
-                                    codes.ir_br_if(outer_block_index)?;
+                                    asm.ir_br_if(outer_block_index)?;
                                     None
                                 };
 
                                 let child_block_type =
-                                    Self::process_block(codes, block, &mut scope, return_type)?;
+                                    Self::process_block(asm, block, &mut scope, return_type)?;
                                 let child_block_type =
                                     scope.types().canonical(child_block_type.as_ref());
 
                                 if let Some(this_block) = this_block {
-                                    codes.ir_br(outer_block_index)?;
-                                    codes.ir_end(this_block)?;
+                                    asm.ir_br(outer_block_index)?;
+                                    asm.ir_end(this_block)?;
                                 }
 
                                 if !child_block_type.is_never() {
@@ -280,12 +280,12 @@ impl CodeGen {
                                 let mut scope = scope.scoped(None, None);
 
                                 Self::process_expression(
-                                    codes,
+                                    asm,
                                     expr,
                                     Some(&builtin_boolean),
                                     &mut scope,
                                 )?;
-                                codes.ir_invert()?;
+                                asm.ir_invert()?;
 
                                 let this_block = block_indexes.pop().ok_or(
                                     CompileError::internal_inconsistency(
@@ -293,14 +293,14 @@ impl CodeGen {
                                         ErrorPosition::Unspecified,
                                     ),
                                 )?;
-                                codes.ir_br_if(this_block)?;
+                                asm.ir_br_if(this_block)?;
 
                                 let child_block_type =
-                                    Self::process_block(codes, block, &mut scope, return_type)?;
+                                    Self::process_block(asm, block, &mut scope, return_type)?;
                                 let child_block_type =
                                     scope.types().canonical(child_block_type.as_ref());
-                                codes.ir_br(outer_block_index)?;
-                                codes.ir_end(this_block)?;
+                                asm.ir_br(outer_block_index)?;
+                                asm.ir_end(this_block)?;
 
                                 if !child_block_type.is_never() {
                                     may_break = false;
@@ -310,7 +310,7 @@ impl CodeGen {
                                 has_else = true;
                                 let mut scope = scope.scoped(None, None);
                                 let child_block_type =
-                                    Self::process_block(codes, block, &mut scope, return_type)?;
+                                    Self::process_block(asm, block, &mut scope, return_type)?;
                                 let child_block_type =
                                     scope.types().canonical(child_block_type.as_ref());
 
@@ -325,37 +325,37 @@ impl CodeGen {
                         has_to_break = true;
                     }
 
-                    codes.ir_end(outer_block_index)?;
+                    asm.ir_end(outer_block_index)?;
                 }
 
                 Statement::WhileStatement(expr, block) => {
-                    let break_index = codes.ir_block();
-                    let loop_index = codes.ir_loop();
+                    let break_index = asm.ir_block();
+                    let loop_index = asm.ir_loop();
                     let mut scope = scope.scoped(Some(break_index), Some(loop_index));
 
-                    Self::process_expression(codes, expr, Some(&builtin_boolean), &mut scope)?;
-                    codes.ir_invert()?;
-                    codes.ir_br_if(break_index)?;
+                    Self::process_expression(asm, expr, Some(&builtin_boolean), &mut scope)?;
+                    asm.ir_invert()?;
+                    asm.ir_br_if(break_index)?;
 
-                    let block_type = Self::process_block(codes, block, &mut scope, return_type)?;
+                    let block_type = Self::process_block(asm, block, &mut scope, return_type)?;
                     let block_type = scope.types().canonical(block_type.as_ref());
 
                     if block_type.is_never() {
                         has_to_break = true;
                     } else {
-                        codes.ir_br(loop_index)?;
+                        asm.ir_br(loop_index)?;
                     }
-                    codes.ir_end(loop_index)?;
-                    codes.ir_end(break_index)?;
+                    asm.ir_end(loop_index)?;
+                    asm.ir_end(break_index)?;
                 }
 
                 Statement::Expression(expr) => {
                     let expr_type = scope
                         .types()
-                        .canonical(Self::process_expression(codes, expr, None, scope)?.as_ref());
+                        .canonical(Self::process_expression(asm, expr, None, scope)?.as_ref());
 
                     if !expr_type.is_special() {
-                        codes.ir_drop()?;
+                        asm.ir_drop()?;
                     }
                     if expr_type.is_never() {
                         has_to_break = true;
@@ -364,17 +364,17 @@ impl CodeGen {
 
                 Statement::ReturnStatement(expr) => {
                     let _expr_type = scope.types().canonical(
-                        Self::process_expression(codes, expr, Some(&return_type), scope)?.as_ref(),
+                        Self::process_expression(asm, expr, Some(&return_type), scope)?.as_ref(),
                     );
 
-                    codes.ir_return()?;
+                    asm.ir_return()?;
 
                     has_to_break = true;
                 }
 
                 Statement::Break(position) => {
                     if let Some(target) = scope.break_index() {
-                        codes.ir_br(target)?;
+                        asm.ir_br(target)?;
                         has_to_break = true;
                     } else {
                         return Err(CompileError::out_of_context("", *position));
@@ -383,7 +383,7 @@ impl CodeGen {
 
                 Statement::Continue(position) => {
                     if let Some(target) = scope.continue_index() {
-                        codes.ir_br(target)?;
+                        asm.ir_br(target)?;
                         has_to_break = true;
                     } else {
                         return Err(CompileError::out_of_context("", *position));
@@ -412,7 +412,7 @@ impl CodeGen {
     }
 
     fn process_expression(
-        codes: &mut toyir::CodeStream,
+        asm: &mut toyir::FunctionAssembler,
         expr: &Expression,
         expected_type: Option<&Arc<TypeDescriptor>>,
         scope: &Scope,
@@ -424,7 +424,7 @@ impl CodeGen {
             &expr.item(),
             scope,
         )?;
-        Self::generate_unary(codes, &item, scope)
+        Self::generate_unary(asm, &item, scope)
             .map(|_| result_type.optimistic_type().map(|v| v.clone()))
     }
 
@@ -630,7 +630,7 @@ impl CodeGen {
     }
 
     fn generate_unary(
-        codes: &mut toyir::CodeStream,
+        asm: &mut toyir::FunctionAssembler,
         item: &Unary,
         scope: &Scope,
     ) -> Result<InferredType, CompileError> {
@@ -638,35 +638,35 @@ impl CodeGen {
             Unary::Void(_) => Ok(InferredType::Inferred(scope.types().builtin_void())),
 
             Unary::Identifier(identifier) => {
-                let var_idx = scope
+                let localidx = scope
                     .resolve_local(identifier.as_str())
                     .ok_or(CompileError::identifier_not_found(&identifier))?;
 
-                let var_desc = scope.get_desc_local(var_idx);
+                let var_desc = scope.get_desc_local(localidx);
 
-                codes.ir_local_get(var_idx.get());
+                asm.ir_local_get(localidx);
 
                 Ok(var_desc.inferred_type().clone())
             }
 
-            Unary::Parenthesis(expr) => Self::generate_unary(codes, expr.item(), scope),
+            Unary::Parenthesis(expr) => Self::generate_unary(asm, expr.item(), scope),
 
             Unary::Unary(op, position, ref value) => match op {
-                UnaryOperator::Plus => Self::generate_unary(codes, value, scope),
+                UnaryOperator::Plus => Self::generate_unary(asm, value, scope),
 
-                UnaryOperator::Minus => codes.ir_neg(|codes| {
-                    let result_type = Self::generate_unary(codes, value, scope)?;
+                UnaryOperator::Minus => asm.ir_neg(|asm| {
+                    let result_type = Self::generate_unary(asm, value, scope)?;
                     let type2 = result_type.optimistic_type().unwrap();
                     let type2 = scope.types().resolve_primitive(type2).unwrap();
                     Ok((type2, result_type))
                 }),
 
                 UnaryOperator::BitNot | UnaryOperator::LogicalNot => {
-                    let result_type = Self::generate_unary(codes, value, scope)?;
+                    let result_type = Self::generate_unary(asm, value, scope)?;
                     if result_type.optimistic_type().unwrap().is_boolean() {
-                        codes.ir_invert()?;
+                        asm.ir_invert()?;
                     } else {
-                        codes.emit_unop(toyir::Op::Not)?;
+                        asm.emit_unop(toyir::Op::Not)?;
                     }
                     Ok(result_type)
                 }
@@ -675,23 +675,23 @@ impl CodeGen {
                         Unary::Identifier(ref v) => Ok(v),
                         _ => Err(CompileError::lvalue_required(value.position())),
                     }?;
-                    let var_idx = scope
+                    let localidx = scope
                         .resolve_local(identifier.as_str())
                         .ok_or(CompileError::identifier_not_found(identifier))?;
-                    let var_desc = scope.get_desc_local(var_idx);
+                    let var_desc = scope.get_desc_local(localidx);
                     if !var_desc.is_mutable() {
                         return Err(CompileError::cannot_assign(identifier));
                     }
 
-                    codes.ir_local_get(var_idx.get());
+                    asm.ir_local_get(localidx);
 
                     match op {
-                        UnaryOperator::PreIncrement => codes.emit_unop(toyir::Op::Inc)?,
-                        UnaryOperator::PreDecrement => codes.emit_unop(toyir::Op::Dec)?,
+                        UnaryOperator::PreIncrement => asm.emit_unop(toyir::Op::Inc)?,
+                        UnaryOperator::PreDecrement => asm.emit_unop(toyir::Op::Dec)?,
                         _ => unreachable!(),
                     }
 
-                    codes.ir_local_tee(var_idx.get())?;
+                    asm.ir_local_tee(localidx)?;
 
                     Ok(var_desc.inferred_type().clone())
                 }
@@ -701,24 +701,24 @@ impl CodeGen {
                         Unary::Identifier(ref v) => Ok(v),
                         _ => Err(CompileError::lvalue_required(value.position())),
                     }?;
-                    let var_idx = scope
+                    let localidx = scope
                         .resolve_local(identifier.as_str())
                         .ok_or(CompileError::identifier_not_found(identifier))?;
-                    let var_desc = scope.get_desc_local(var_idx);
+                    let var_desc = scope.get_desc_local(localidx);
                     if !var_desc.is_mutable() {
                         return Err(CompileError::cannot_assign(identifier));
                     }
 
-                    codes.ir_local_get(var_idx.get());
-                    codes.ir_local_get(var_idx.get());
+                    asm.ir_local_get(localidx);
+                    asm.ir_local_get(localidx);
 
                     match op {
-                        UnaryOperator::PostIncrement => codes.emit_unop(toyir::Op::Inc)?,
-                        UnaryOperator::PostDecrement => codes.emit_unop(toyir::Op::Dec)?,
+                        UnaryOperator::PostIncrement => asm.emit_unop(toyir::Op::Inc)?,
+                        UnaryOperator::PostDecrement => asm.emit_unop(toyir::Op::Dec)?,
                         _ => unreachable!(),
                     }
 
-                    codes.ir_local_set(var_idx.get())?;
+                    asm.ir_local_set(localidx)?;
 
                     Ok(var_desc.inferred_type().clone())
                 }
@@ -739,14 +739,14 @@ impl CodeGen {
                 | BinaryOperator::Ge
                 | BinaryOperator::Identical
                 | BinaryOperator::NotIdentical => {
-                    let lhs_type = Self::generate_unary(codes, lhs, scope)?;
-                    let _rhs_type = Self::generate_unary(codes, rhs, scope)?;
+                    let lhs_type = Self::generate_unary(asm, lhs, scope)?;
+                    let _rhs_type = Self::generate_unary(asm, rhs, scope)?;
                     let is_signed = lhs_type
                         .pessimistic_type()
                         .and_then(|v| scope.types().resolve_primitive(v))
                         .map(|v| v.is_signed())
                         .unwrap_or(false);
-                    codes.emit_binop(op.to_ir(is_signed))?;
+                    asm.emit_binop(op.to_ir(is_signed))?;
                     Ok(InferredType::Inferred(scope.types().builtin_boolean()))
                 }
 
@@ -760,14 +760,14 @@ impl CodeGen {
                 | BinaryOperator::BitXor
                 | BinaryOperator::Shl
                 | BinaryOperator::Shr => {
-                    let lhs_type = Self::generate_unary(codes, lhs, scope)?;
-                    let _rhs_type = Self::generate_unary(codes, rhs, scope)?;
+                    let lhs_type = Self::generate_unary(asm, lhs, scope)?;
+                    let _rhs_type = Self::generate_unary(asm, rhs, scope)?;
                     let is_signed = lhs_type
                         .pessimistic_type()
                         .and_then(|v| scope.types().resolve_primitive(v))
                         .map(|v| v.is_signed())
                         .unwrap_or(false);
-                    codes.emit_binop(op.to_ir(is_signed))?;
+                    asm.emit_binop(op.to_ir(is_signed))?;
                     Ok(lhs_type)
                 }
 
@@ -786,10 +786,10 @@ impl CodeGen {
                         Unary::Identifier(ref v) => Ok(v),
                         _ => Err(CompileError::lvalue_required(lhs.position())),
                     }?;
-                    let var_idx = scope
+                    let localidx = scope
                         .resolve_local(identifier.as_str())
                         .ok_or(CompileError::identifier_not_found(identifier))?;
-                    let var_desc = scope.get_desc_local(var_idx);
+                    let var_desc = scope.get_desc_local(localidx);
                     if !var_desc.is_mutable() {
                         return Err(CompileError::cannot_assign(identifier));
                     }
@@ -812,10 +812,10 @@ impl CodeGen {
                     };
 
                     if !matches!(assign_operator, BinaryOperator::Assign) {
-                        codes.ir_local_get(var_idx.get());
+                        asm.ir_local_get(localidx);
                     }
 
-                    Self::generate_unary(codes, rhs, scope)?;
+                    Self::generate_unary(asm, rhs, scope)?;
 
                     if !matches!(assign_operator, BinaryOperator::Assign) {
                         let is_signed = var_desc
@@ -824,9 +824,9 @@ impl CodeGen {
                             .and_then(|v| scope.types().resolve_primitive(v))
                             .map(|v| v.is_signed())
                             .unwrap_or(false);
-                        codes.emit_binop(assign_operator.to_ir(is_signed))?;
+                        asm.emit_binop(assign_operator.to_ir(is_signed))?;
                     }
-                    codes.ir_local_tee(var_idx.get())?;
+                    asm.ir_local_tee(localidx)?;
 
                     Ok(var_desc.inferred_type().clone())
                 }
@@ -842,11 +842,11 @@ impl CodeGen {
 
             Unary::Constant(constant, _position) => match constant {
                 Keyword::True => {
-                    codes.ir_bool_const(true);
+                    asm.ir_bool_const(true);
                     Ok(InferredType::Inferred(scope.types().builtin_boolean()))
                 }
                 Keyword::False => {
-                    codes.ir_bool_const(false);
+                    asm.ir_bool_const(false);
                     Ok(InferredType::Inferred(scope.types().builtin_boolean()))
                 }
                 _ => {
@@ -859,49 +859,49 @@ impl CodeGen {
 
             Unary::NumericLiteral(number, _position) => match number {
                 Integer::I8(v) => {
-                    codes.ir_i32_const(*v as i32);
+                    asm.ir_i32_const(*v as i32);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::I8),
                     ))
                 }
                 Integer::U8(v) => {
-                    codes.ir_i32_const(*v as i32);
+                    asm.ir_i32_const(*v as i32);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::U8),
                     ))
                 }
                 Integer::I16(v) => {
-                    codes.ir_i32_const(*v as i32);
+                    asm.ir_i32_const(*v as i32);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::I16),
                     ))
                 }
                 Integer::U16(v) => {
-                    codes.ir_i32_const(*v as i32);
+                    asm.ir_i32_const(*v as i32);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::U16),
                     ))
                 }
                 Integer::I32(v) => {
-                    codes.ir_i32_const(*v);
+                    asm.ir_i32_const(*v);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::I32),
                     ))
                 }
                 Integer::U32(v) => {
-                    codes.ir_i32_const(*v as i32);
+                    asm.ir_i32_const(*v as i32);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::U32),
                     ))
                 }
                 Integer::I64(v) => {
-                    codes.ir_i64_const(*v);
+                    asm.ir_i64_const(*v);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::I64),
                     ))
                 }
                 Integer::U64(v) => {
-                    codes.ir_i64_const(*v as i64);
+                    asm.ir_i64_const(*v as i64);
                     Ok(InferredType::Inferred(
                         scope.types().primitive_type(Primitive::U64),
                     ))
@@ -944,10 +944,10 @@ impl CodeGen {
                 }
 
                 for (parameter, expr) in func_desc.param_types().iter().zip(args.iter()) {
-                    Self::process_expression(codes, expr, Some(parameter), scope)?;
+                    Self::process_expression(asm, expr, Some(parameter), scope)?;
                 }
 
-                codes.ir_call(
+                asm.ir_call(
                     func_desc.function_index().as_usize(),
                     func_desc.param_types().len(),
                     if func_desc.result_type().is_special() {
@@ -957,7 +957,7 @@ impl CodeGen {
                     },
                 )?;
                 if func_desc.result_type().is_never() {
-                    codes.ir_unreachable();
+                    asm.ir_unreachable();
                 }
 
                 Ok(InferredType::Inferred(func_desc.result_type().clone()))

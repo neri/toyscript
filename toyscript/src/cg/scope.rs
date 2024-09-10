@@ -1,8 +1,8 @@
 use crate::*;
 use ast::function::Parameter;
 use token::TokenPosition;
-use toyir::BlockIndex;
-use types::{index::LocalIndex, InferredType, TypeDescriptor};
+use toyir::{BlockIndex, LocalIndex};
+use types::{InferredType, TypeDescriptor};
 
 #[derive(Debug)]
 pub struct VariableStorage<'a> {
@@ -39,13 +39,10 @@ impl VariableStorage<'_> {
         Scope::root(self)
     }
 
-    pub fn register_local(&self, mut var_desc: VariableDescriptor) -> LocalIndex {
+    fn alloc_local(&self, var_desc: VariableDescriptor) {
         let mut variables = self.variables.borrow_mut();
-        let index = unsafe { LocalIndex::new(variables.len()) };
-        var_desc.index = index;
         variables.push(var_desc);
         drop(variables);
-        index
     }
 
     pub fn get_desc_local(&self, index: LocalIndex) -> VariableDescriptor {
@@ -138,10 +135,7 @@ impl Scope<'_> {
             .or_else(|| self.parent.and_then(|v| v.resolve_local(identifier)))
     }
 
-    pub fn declare_local(
-        &mut self,
-        var_desc: VariableDescriptor,
-    ) -> Result<LocalIndex, CompileError> {
+    pub fn declare_local(&mut self, var_desc: VariableDescriptor) -> Result<(), CompileError> {
         if self
             .storage
             .types
@@ -153,10 +147,10 @@ impl Scope<'_> {
         match self.get_local(var_desc.identifier().as_str()) {
             Some(_) => Err(CompileError::duplicate_identifier(&var_desc.identifier)),
             None => {
-                let index = self.storage.register_local(var_desc.clone());
+                self.storage.alloc_local(var_desc.clone());
                 self.variables
-                    .push((var_desc.identifier().to_string(), index));
-                Ok(index)
+                    .push((var_desc.identifier().to_string(), var_desc.index()));
+                Ok(())
             }
         }
     }
@@ -260,6 +254,11 @@ impl VariableDescriptor {
     #[inline]
     pub fn index(&self) -> LocalIndex {
         self.index
+    }
+
+    #[inline]
+    pub fn set_index(&mut self, index: LocalIndex) {
+        self.index = index;
     }
 
     #[inline]

@@ -9,10 +9,8 @@ pub use _irop::*;
 mod _primitive;
 pub use _primitive::*;
 
-mod asm;
 mod function;
 mod module;
-pub use asm::*;
 pub use function::*;
 pub use module::*;
 
