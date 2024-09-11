@@ -17,7 +17,7 @@ pub struct Elem {
 impl ModuleName for Elem {
     const IDENTIFIER: Keyword = Keyword::Elem;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let _id = Identifier::try_expect(tokens)?;
 
         let offset = Offset::expect(tokens)?;

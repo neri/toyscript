@@ -14,7 +14,7 @@ impl Imports {
     pub(super) fn convert(
         module: &mut Module,
         ast_module: &ast::AstModule,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         for ast_import in ast_module.imports() {
             let mod_name = ast_import.mod_name().get();
             let name = ast_import.name().get();
@@ -85,7 +85,7 @@ impl Imports {
         mod_name: &str,
         name: &str,
         typeuse: &ast::types::TypeUse,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         let mod_name = mod_name.to_owned();
         let name = name.to_owned();
         let typeidx = module.define_typeuse(typeuse)?;
@@ -112,7 +112,7 @@ impl Imports {
         mod_name: &str,
         name: &str,
         global_type: &ast::global::GlobalType,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         let mod_name = mod_name.to_owned();
         let name = name.to_owned();
 

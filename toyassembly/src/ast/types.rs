@@ -1,5 +1,5 @@
 //! Types
-use super::{keyword::Keyword, ParseError};
+use super::{keyword::Keyword, AssembleError};
 use crate::types::ValType;
 use crate::*;
 use ast::identifier::Identifier;
@@ -34,8 +34,8 @@ impl IdAndValtype {
     }
 
     #[inline]
-    pub fn valtype(&self) -> &ValType {
-        &self.valtype
+    pub fn valtype(&self) -> ValType {
+        self.valtype
     }
 }
 
@@ -59,7 +59,7 @@ impl Type {
 impl ModuleName for Type {
     const IDENTIFIER: Keyword = Keyword::Type;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let func = try_expect_module::<FuncType>(tokens)?;
@@ -104,7 +104,7 @@ impl FuncType {
 impl ModuleName for FuncType {
     const IDENTIFIER: Keyword = Keyword::Func;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let mut params = Vec::new();
         let mut results = Vec::new();
 
@@ -137,7 +137,7 @@ pub struct FuncTypeResult(pub(crate) Vec<ValType>);
 impl ModuleName for FuncTypeParam {
     const IDENTIFIER: Keyword = Keyword::Param;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         // The optional identifier names for parameters in a function type only have documentation purpose.
         // They cannot be referenced from anywhere.
         match Identifier::try_expect(tokens)? {
@@ -169,7 +169,7 @@ impl ModuleName for FuncTypeParam {
 
                         TokenType::Identifier => {
                             let item = ValType::from_str(token.source()).ok_or(
-                                ParseError::invalid_identifier(
+                                AssembleError::invalid_identifier(
                                     token.source(),
                                     token.position().into(),
                                 ),
@@ -188,7 +188,7 @@ impl ModuleName for FuncTypeParam {
 impl ModuleName for FuncTypeResult {
     const IDENTIFIER: Keyword = Keyword::Result;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let mut result = Vec::new();
 
         result.push(expect_valtype(tokens)?);
@@ -203,7 +203,7 @@ impl ModuleName for FuncTypeResult {
 
                 TokenType::Identifier => {
                     let item = ValType::from_str(token.source()).ok_or(
-                        ParseError::invalid_identifier(token.source(), token.position().into()),
+                        AssembleError::invalid_identifier(token.source(), token.position().into()),
                     )?;
                     result.push(item);
                 }
@@ -238,11 +238,11 @@ impl TypeUse {
         &self.token
     }
 
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let start = match tokens.peek() {
             Some(v) => v.position().start(),
             _ => {
-                return Err(ParseError::missing_token(
+                return Err(AssembleError::missing_token(
                     &[TokenType::OpenParenthesis],
                     &tokens.eof(),
                 ))
@@ -313,7 +313,7 @@ pub struct FuncTypeLocal(pub Vec<IdAndValtype>);
 impl ModuleName for FuncTypeLocal {
     const IDENTIFIER: Keyword = Keyword::Local;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         match Identifier::try_expect(tokens)? {
             Some(id) => {
                 let valtype = expect_valtype(tokens)?;
@@ -346,7 +346,7 @@ impl ModuleName for FuncTypeLocal {
 
                         TokenType::Identifier => {
                             let valtype = ValType::from_str(token.source()).ok_or(
-                                ParseError::invalid_identifier(
+                                AssembleError::invalid_identifier(
                                     token.source(),
                                     token.position().into(),
                                 ),
@@ -368,7 +368,7 @@ pub struct TypeIndex(pub IndexToken);
 impl ModuleName for TypeIndex {
     const IDENTIFIER: Keyword = Keyword::Type;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = IndexToken::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;
@@ -385,7 +385,7 @@ pub enum ExtVis {
 }
 
 impl ExtVis {
-    pub fn try_expect(tokens: &mut TokenStream<Keyword>) -> Result<Option<Self>, ParseError> {
+    pub fn try_expect(tokens: &mut TokenStream<Keyword>) -> Result<Option<Self>, AssembleError> {
         let mut vis = None;
         if let Some(import) = try_expect_module::<ImportAbbr>(tokens)? {
             vis = Some(ExtVis::Import(import));

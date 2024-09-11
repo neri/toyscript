@@ -1,25 +1,32 @@
+use token::ArcStringSlice;
+
 use super::*;
 use crate::*;
 
+#[derive(Clone)]
 pub struct Identifier {
-    identifier: String,
-    id_position: TokenPosition,
+    str: ArcStringSlice,
 }
 
 impl Identifier {
     #[inline]
+    pub fn from_token(token: &Token<Keyword>) -> Self {
+        Self {
+            str: token.source_arc().clone(),
+        }
+    }
+
+    #[inline]
     pub fn new(identifier: &str, id_position: TokenPosition) -> Self {
         Self {
-            identifier: identifier.to_string(),
-            id_position,
+            str: ArcStringSlice::from_str(identifier, id_position),
         }
     }
 
     #[inline]
     pub fn from_keyword(keyword: Keyword, id_position: TokenPosition) -> Self {
         Self {
-            identifier: keyword.as_str().to_string(),
-            id_position,
+            str: ArcStringSlice::from_str(keyword.as_str(), id_position),
         }
     }
 
@@ -36,7 +43,7 @@ impl Identifier {
         let _ = tokens;
         match leading.token_type() {
             TokenType::Identifier => {
-                let identifier = Identifier::new(leading.source(), leading.position());
+                let identifier = Identifier::from_token(&leading);
                 return Ok(identifier);
             }
             _ => (),
@@ -46,36 +53,35 @@ impl Identifier {
 
     #[inline]
     pub fn as_str(&self) -> &str {
-        &self.identifier
+        self.str.as_str()
     }
 
     #[inline]
-    pub fn as_string(&self) -> &String {
-        &self.identifier
+    pub fn as_string(&self) -> String {
+        self.str.to_string()
     }
 
     #[inline]
     pub fn id_position(&self) -> TokenPosition {
-        self.id_position
+        self.str.position()
     }
 }
 
 impl PartialEq for Identifier {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.identifier == other.identifier
+        self.str.as_str() == other.str.as_str()
     }
 }
 
-impl Clone for Identifier {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            identifier: self.identifier.clone(),
-            id_position: self.id_position,
-        }
-    }
-}
+// impl Clone for Identifier {
+//     #[inline]
+//     fn clone(&self) -> Self {
+//         Self {
+//             str: self.str.clone()
+//         }
+//     }
+// }
 
 impl core::fmt::Display for Identifier {
     #[inline]

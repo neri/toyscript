@@ -945,6 +945,14 @@ impl ArcStringSlice {
     }
 
     #[inline]
+    pub fn from_str(str: &str, range: TokenPosition) -> Self {
+        Self {
+            buffer: Arc::new(str.as_bytes().to_vec()),
+            range,
+        }
+    }
+
+    #[inline]
     pub fn empty_at(position: usize) -> Self {
         Self {
             buffer: Arc::new(Vec::new()),
@@ -958,6 +966,11 @@ impl ArcStringSlice {
             .get(self.range.range())
             .map(|v| unsafe { core::str::from_utf8_unchecked(v) })
             .unwrap_or_default()
+    }
+
+    #[inline]
+    pub const fn position(&self) -> TokenPosition {
+        self.range
     }
 }
 
@@ -997,6 +1010,11 @@ impl<KEYWORD> Token<KEYWORD> {
     #[inline]
     pub fn source(&self) -> &str {
         self.str.as_str()
+    }
+
+    #[inline]
+    pub fn source_arc(&self) -> &ArcStringSlice {
+        &self.str
     }
 
     #[inline]

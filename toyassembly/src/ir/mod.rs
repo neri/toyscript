@@ -48,13 +48,13 @@ impl Module {
     /// Current version number is 1
     pub const WASM_BINARY_VERSION: [u8; 4] = *b"\x01\0\0\0";
 
-    pub fn from_ast(ast_module: ast::AstModule) -> Result<Self, ParseError> {
+    pub fn from_ast(ast_module: ast::AstModule) -> Result<Self, AssembleError> {
         let mut module = Module {
             ..Default::default()
         };
 
         for item in ast_module.types() {
-            let new_item = Type::new(item.params(), item.results())?;
+            let new_item = Type::from_ast(item.params(), item.results());
             if let Some(id) = item.identifier() {
                 module
                     .register_ast_name(id, IdType::Type(TypeIndex(module.types.0.len() as u32)))?;
@@ -95,7 +95,19 @@ impl Module {
         Ok(module)
     }
 
-    pub fn assemble(&mut self) -> Result<(), ParseError> {
+    pub fn from_toyir(tir_module: toyir::Module) -> Result<Self, AssembleError> {
+        let mut module = Module {
+            ..Default::default()
+        };
+
+        Functions::process_tir(&mut module, tir_module.functions())?;
+
+        module.assemble()?;
+
+        Ok(module)
+    }
+
+    pub fn assemble(&mut self) -> Result<(), AssembleError> {
         let mut codes = self.codes.drain();
         for code in codes.iter_mut() {
             code.assemble(&self)?;
@@ -194,39 +206,41 @@ impl Module {
     pub fn define_typeuse(
         &mut self,
         ast_typeuse: &ast::types::TypeUse,
-    ) -> Result<TypeIndex, ParseError> {
+    ) -> Result<TypeIndex, AssembleError> {
         match ast_typeuse.kind() {
             ast::types::TypeUseKind::Index(typeidx) => self.get_typeidx(&typeidx.0),
             ast::types::TypeUseKind::FuncType(func_type) => {
-                let new_item = Type::new(func_type.params(), func_type.results())?;
+                let new_item = Type::from_ast(func_type.params(), func_type.results());
                 self.types.define(new_item)
             }
             ast::types::TypeUseKind::Both(_typeidx, func_type) => {
-                //
-                let new_item = Type::new(func_type.params(), func_type.results())?;
+                let new_item = Type::from_ast(func_type.params(), func_type.results());
                 self.types.define(new_item)
             }
         }
     }
 
-    pub fn find_typeuse(&self, ast_typeuse: &ast::types::TypeUse) -> Result<TypeIndex, ParseError> {
+    pub fn find_typeuse(
+        &self,
+        ast_typeuse: &ast::types::TypeUse,
+    ) -> Result<TypeIndex, AssembleError> {
         match ast_typeuse.kind() {
             ast::types::TypeUseKind::Index(typeidx) => self.get_typeidx(&typeidx.0),
             ast::types::TypeUseKind::FuncType(func_type) => {
-                let item = Type::new(func_type.params(), func_type.results())?;
+                let item = Type::from_ast(func_type.params(), func_type.results());
                 self.types
                     .find(item)
-                    .ok_or(ParseError::undefined_identifier(
+                    .ok_or(AssembleError::undefined_identifier(
                         ast_typeuse.token().source::<()>(),
                         ast_typeuse.token().position().into(),
                     ))
             }
             ast::types::TypeUseKind::Both(_typeidx, func_type) => {
                 //
-                let item = Type::new(func_type.params(), func_type.results())?;
+                let item = Type::from_ast(func_type.params(), func_type.results());
                 self.types
                     .find(item)
-                    .ok_or(ParseError::undefined_identifier(
+                    .ok_or(AssembleError::undefined_identifier(
                         ast_typeuse.token().source::<()>(),
                         ast_typeuse.token().position().into(),
                     ))
@@ -238,11 +252,11 @@ impl Module {
         &mut self,
         id: &ast::identifier::Identifier,
         id_type: IdType,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         let key = id.name();
 
         if self.names.get(key).is_some() {
-            return Err(ParseError::duplicated_identifier(id));
+            return Err(AssembleError::duplicated_identifier(id));
         }
 
         self.names.insert(key.to_owned(), id_type);
@@ -253,11 +267,11 @@ impl Module {
     pub fn get_typeidx(
         &self,
         index: &ast::identifier::IndexToken,
-    ) -> Result<TypeIndex, ParseError> {
+    ) -> Result<TypeIndex, AssembleError> {
         match index {
             ast::identifier::IndexToken::Num(num) => {
                 let typeidx = num.get();
-                ParseError::check_index(
+                AssembleError::check_index(
                     typeidx,
                     0..(self.types.0.len() as u32),
                     num.position().into(),
@@ -266,7 +280,7 @@ impl Module {
             }
             ast::identifier::IndexToken::Id(id) => match self.get(id.name()) {
                 Some(IdType::Type(v)) => Ok(v),
-                _ => Err(ParseError::undefined_identifier(
+                _ => Err(AssembleError::undefined_identifier(
                     id.name(),
                     id.position().into(),
                 )),
@@ -274,11 +288,14 @@ impl Module {
         }
     }
 
-    pub fn get_funcidx(&self, id: &ast::identifier::IndexToken) -> Result<FuncIndex, ParseError> {
+    pub fn get_funcidx(
+        &self,
+        id: &ast::identifier::IndexToken,
+    ) -> Result<FuncIndex, AssembleError> {
         match id {
             ast::identifier::IndexToken::Num(num) => {
                 let funcidx = num.get();
-                ParseError::check_index(
+                AssembleError::check_index(
                     funcidx,
                     0..(self.max_func_len() as u32),
                     num.position().into(),
@@ -287,7 +304,7 @@ impl Module {
             }
             ast::identifier::IndexToken::Id(id) => match self.get(id.name()) {
                 Some(IdType::Func(v)) => Ok(v),
-                _ => Err(ParseError::undefined_identifier(
+                _ => Err(AssembleError::undefined_identifier(
                     id.name(),
                     id.position().into(),
                 )),
@@ -298,11 +315,11 @@ impl Module {
     pub fn get_globalidx(
         &self,
         id: &ast::identifier::IndexToken,
-    ) -> Result<GlobalIndex, ParseError> {
+    ) -> Result<GlobalIndex, AssembleError> {
         match id {
             ast::identifier::IndexToken::Num(num) => {
                 let globalidx = num.get();
-                ParseError::check_index(
+                AssembleError::check_index(
                     globalidx,
                     0..(self.max_global_len() as u32),
                     num.position().into(),
@@ -311,7 +328,7 @@ impl Module {
             }
             ast::identifier::IndexToken::Id(id) => match self.get(id.name()) {
                 Some(IdType::Global(v)) => Ok(v),
-                _ => Err(ParseError::undefined_identifier(
+                _ => Err(AssembleError::undefined_identifier(
                     id.name(),
                     id.position().into(),
                 )),

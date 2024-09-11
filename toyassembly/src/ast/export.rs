@@ -36,7 +36,7 @@ impl Export {
 impl ModuleName for Export {
     const IDENTIFIER: Keyword = Keyword::Export;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let name = StringLiteral::expect(tokens)?;
 
         let desc = if let Some(item) = try_expect_module::<ExportFunc>(tokens)? {
@@ -49,7 +49,7 @@ impl ModuleName for Export {
             ExportDescriptor::Global(item)
         } else {
             expect(tokens, &[TokenType::OpenParenthesis])?;
-            return Err(ParseError::unexpected_keyword(
+            return Err(AssembleError::unexpected_keyword(
                 &[
                     Keyword::Func,
                     Keyword::Table,
@@ -73,7 +73,7 @@ pub struct ExportFunc(pub IndexToken);
 impl ModuleName for ExportFunc {
     const IDENTIFIER: Keyword = Keyword::Func;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = IndexToken::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;
@@ -89,7 +89,7 @@ pub struct ExportTable(pub IndexToken);
 impl ModuleName for ExportTable {
     const IDENTIFIER: Keyword = Keyword::Table;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = IndexToken::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;
@@ -105,7 +105,7 @@ pub struct ExportMemory(pub IndexToken);
 impl ModuleName for ExportMemory {
     const IDENTIFIER: Keyword = Keyword::Memory;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = IndexToken::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;
@@ -121,7 +121,7 @@ pub struct ExportGlobal(pub IndexToken);
 impl ModuleName for ExportGlobal {
     const IDENTIFIER: Keyword = Keyword::Global;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = IndexToken::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;
@@ -146,7 +146,7 @@ impl ExportAbbr {
 impl ModuleName for ExportAbbr {
     const IDENTIFIER: Keyword = Keyword::Export;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let name = StringLiteral::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;

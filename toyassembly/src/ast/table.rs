@@ -39,7 +39,7 @@ impl Table {
 impl ModuleName for Table {
     const IDENTIFIER: Keyword = Keyword::Table;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let min = NumericLiteral::<u32>::expect(tokens)?;
@@ -82,7 +82,7 @@ impl TableUse {
 impl ModuleName for TableUse {
     const IDENTIFIER: Keyword = Keyword::Table;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = NumericLiteral::<u32>::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;

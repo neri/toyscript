@@ -14,7 +14,7 @@ pub struct Type {
 }
 
 impl Types {
-    pub fn define(&mut self, new_item: Type) -> Result<TypeIndex, ParseError> {
+    pub fn define(&mut self, new_item: Type) -> Result<TypeIndex, AssembleError> {
         for (index, item) in self.0.iter().enumerate() {
             if *item == new_item {
                 return Ok(TypeIndex(index as u32));
@@ -60,26 +60,26 @@ impl core::fmt::Debug for Types {
 }
 
 impl Type {
-    #[inline]
-    pub fn new(
-        params: &[ast::types::IdAndValtype],
-        results: &[ValType],
-    ) -> Result<Type, ParseError> {
-        let ast_params = params;
+    pub fn from_iter(
+        params: impl ExactSizeIterator<Item = ValType>,
+        results: impl ExactSizeIterator<Item = ValType>,
+    ) -> Self {
         // params + results + {void(1) + void(1) + separator(1)}(=3)
-        let mut signature = String::with_capacity(ast_params.len() + results.len() + 3);
-        let mut params = Vec::with_capacity(ast_params.len());
-        if ast_params.len() > 0 {
-            for param in ast_params {
-                params.push(param.valtype().clone());
-                signature.push_str(param.valtype().signature());
+        let mut signature = String::with_capacity(params.len() + results.len() + 3);
+        let mut params_ = Vec::with_capacity(params.len());
+        if params.len() > 0 {
+            for param in params {
+                params_.push(param);
+                signature.push_str(param.signature());
             }
         } else {
             signature.push('v');
         }
         signature.push(':');
+        let mut results_ = Vec::with_capacity(results.len());
         if results.len() > 0 {
             for result in results {
+                results_.push(result);
                 signature.push_str(result.signature());
             }
         } else {
@@ -87,11 +87,19 @@ impl Type {
         }
         signature.shrink_to_fit();
 
-        Ok(Type {
-            params,
-            results: results.to_vec(),
+        Type {
+            params: params_,
+            results: results_,
             signature,
-        })
+        }
+    }
+
+    #[inline]
+    pub fn from_ast(params: &[ast::types::IdAndValtype], results: &[ValType]) -> Self {
+        Self::from_iter(
+            params.iter().map(|v| v.valtype()),
+            results.iter().map(|v| *v),
+        )
     }
 
     #[inline]

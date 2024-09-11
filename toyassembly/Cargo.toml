@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 leb128 = { path = "../lib/leb128" }
+toyir = { path = "../toyir" }

@@ -17,7 +17,7 @@ pub struct Data {
 impl ModuleName for Data {
     const IDENTIFIER: Keyword = Keyword::Data;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let mem_use = try_expect_module::<MemUse>(tokens)?;
 
         let offset = Offset::expect(tokens)?;
@@ -52,7 +52,7 @@ impl core::fmt::Debug for Data {
 pub struct Offset(pub ConstExpr);
 
 impl Offset {
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<ConstExpr, ParseError> {
+    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<ConstExpr, AssembleError> {
         if let Some(offset) = try_expect_module::<Offset>(tokens)? {
             Ok(offset.0)
         } else {
@@ -65,7 +65,7 @@ impl Offset {
 impl ModuleName for Offset {
     const IDENTIFIER: Keyword = Keyword::Offset;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         ConstExpr::expect(tokens, ValType::I32).map(|v| Offset(v))
     }
 }

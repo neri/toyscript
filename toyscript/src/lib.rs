@@ -1,4 +1,4 @@
-//! ToyScript
+//! A Lightweight toy language environment with high affinity for WebAssembly
 #![cfg_attr(not(test), no_std)]
 
 pub mod ast;
@@ -50,12 +50,12 @@ impl ToyScript {
             .map_err(|e| e.to_detail_string(file_name, &src, tokens.line_positions()))
     }
 
-    pub fn debug_ast(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+    pub fn explain_ast(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| Ast::from_tokens(tokens))
             .map(|v| format!("{:#?}", v))
     }
 
-    pub fn debug_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+    pub fn explain_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
 
@@ -66,6 +66,19 @@ impl ToyScript {
             Ok(ir_module)
         })
         .map(|v| format!("{:#?}", v))
+    }
+
+    pub fn to_wasm(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+        let ir_module = Self::_from_src(file_name, src, |tokens| {
+            let ast = Ast::from_tokens(tokens)?;
+            let types = TypeSystem::new(file_name, &ast)?;
+            let ir_module = cg::CodeGen::generate(&ast, &types)?;
+            Ok(ir_module)
+        })?;
+
+        toyassembly::ir::Module::from_toyir(ir_module)
+            .map(|v| format!("{:#?}", v))
+            .map_err(|err| format!("Internal Assembly Error: {:#?}", err))
     }
 }
 

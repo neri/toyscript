@@ -50,11 +50,11 @@ pub struct AstModule {
 pub trait ModuleName: Sized {
     const IDENTIFIER: Keyword;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError>;
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError>;
 }
 
 impl AstModule {
-    pub fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    pub fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         if tokens.expect(&[TokenType::Eof]).is_ok() {
             return Ok(AstModule::default());
         }
@@ -93,7 +93,7 @@ impl AstModule {
                 return Ok(module);
             } else {
                 expect(tokens, &[TokenType::OpenParenthesis])?;
-                return Err(ParseError::unexpected_keyword(
+                return Err(AssembleError::unexpected_keyword(
                     &[
                         Keyword::Data,
                         Keyword::Elem,
@@ -150,7 +150,7 @@ impl AstModule {
 
 pub(crate) fn try_expect_module<MODULE: ModuleName>(
     tokens: &mut TokenStream<Keyword>,
-) -> Result<Option<MODULE>, ParseError> {
+) -> Result<Option<MODULE>, AssembleError> {
     expect_sexpr(tokens, &[MODULE::IDENTIFIER], true).and_then(|v| match v {
         Some(_v) => MODULE::from_tokens(tokens).map(|v| Some(v)),
         None => Ok(None),
@@ -161,14 +161,14 @@ fn expect_sexpr(
     tokens: &mut TokenStream<Keyword>,
     expected: &[Keyword],
     is_opt: bool,
-) -> Result<Option<KeywordToken<Keyword>>, ParseError> {
+) -> Result<Option<KeywordToken<Keyword>>, AssembleError> {
     match tokens.transaction(|tokens| {
         let start = tokens.next_non_blank();
         if start.token_type() != &TokenType::OpenParenthesis {
             if is_opt {
                 return ControlFlow::Break(None);
             } else {
-                return ControlFlow::Break(Some(ParseError::missing_token(
+                return ControlFlow::Break(Some(AssembleError::missing_token(
                     &[TokenType::OpenParenthesis],
                     &start,
                 )));
@@ -195,9 +195,9 @@ fn expect_sexpr(
                     TokenType::CloseParenthesis,
                 ];
                 if next.token_type().is_ignorable() || expected.contains(next.token_type()) {
-                    ControlFlow::<Result<(), ParseError>, Infallible>::Break(Ok(()))
+                    ControlFlow::<Result<(), AssembleError>, Infallible>::Break(Ok(()))
                 } else {
-                    ControlFlow::Break(Err(ParseError::missing_token(&expected, &next)))
+                    ControlFlow::Break(Err(AssembleError::missing_token(&expected, &next)))
                 }
             })
             .unwrap_err()

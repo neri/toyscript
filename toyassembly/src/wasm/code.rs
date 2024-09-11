@@ -9,13 +9,17 @@ use ast::{
 };
 use ir::{index::*, Module};
 use leb128::{Leb128Writer, WriteLeb128};
+use toyir::CodeStreamIter;
 use types::ValType;
 use wasm::opcode::WasmOpcode;
+
+mod code_tir;
 
 #[derive(Debug)]
 pub enum Code {
     Source(Text),
     Binary(Binary),
+    ToyIr(ToyIr),
 }
 
 #[derive(Debug)]
@@ -26,6 +30,8 @@ pub struct Text {
 pub struct Binary {
     bytes: Vec<u8>,
 }
+
+pub struct ToyIr(pub Arc<Vec<u32>>);
 
 impl Binary {
     #[inline]
@@ -40,15 +46,23 @@ impl core::fmt::Debug for Binary {
     }
 }
 
+impl core::fmt::Debug for ToyIr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list()
+            .entries(CodeStreamIter::new(&self.0))
+            .finish()
+    }
+}
+
 impl Code {
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Code, ParseError> {
+    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Code, AssembleError> {
         let snapshot = tokens.snapshot();
         let mut paren_level = 0;
 
         let token = tokens.next_non_blank();
         match token.token_type() {
             TokenType::Eof => {
-                return Err(ParseError::missing_token(
+                return Err(AssembleError::missing_token(
                     &[TokenType::CloseParenthesis],
                     &token,
                 ));
@@ -64,7 +78,7 @@ impl Code {
         loop {
             let token = tokens.next_non_blank();
             if token.token_type() == &TokenType::Eof {
-                return Err(ParseError::missing_token(
+                return Err(AssembleError::missing_token(
                     &[TokenType::CloseParenthesis],
                     &token,
                 ));
@@ -85,36 +99,39 @@ impl Code {
     pub fn assemble(
         &mut self,
         module: &Module,
+        results: &[ValType],
         locals: &[ValType],
         local_ids: &BTreeMap<String, LocalIndex>,
         local_and_params: &[ValType],
-    ) -> Result<(), ParseError> {
-        let Code::Source(src) = self else {
-            return Ok(());
-        };
-        let src_start = 0; //src.position.start() as u32;
-
-        Self::_assemble_src(&mut src.tokens, module, locals, local_ids, local_and_params)
-            .map_err(|mut e| {
-                match e.position {
-                    ErrorPosition::Range(ref mut range) => {
-                        range.0 .0 += src_start;
-                        range.0 .1 += src_start;
-                    }
-                    _ => {}
-                }
-                e
-            })
-            .map(|bytes| *self = Code::Binary(Binary { bytes }))
+    ) -> Result<(), AssembleError> {
+        match self {
+            Code::Binary(_) => Ok(()),
+            Code::Source(src) => Self::_assemble(
+                &mut src.tokens,
+                module,
+                results,
+                locals,
+                local_ids,
+                local_and_params,
+            )
+            .map(|bytes| *self = Code::Binary(Binary { bytes })),
+            Code::ToyIr(tir) => {
+                code_tir::TirToWasm::assemble(&tir.0, module, results, locals, local_and_params)
+                    .map(|bytes| *self = Code::Binary(Binary { bytes }))
+            }
+        }
     }
 
-    fn _assemble_src(
+    /// Perform assembly from source code
+    fn _assemble(
         tokens: &mut TokenStream<Keyword>,
         module: &Module,
+        results: &[ValType],
         locals: &[ValType],
         local_ids: &BTreeMap<String, LocalIndex>,
         local_and_params: &[ValType],
-    ) -> Result<Vec<u8>, ParseError> {
+    ) -> Result<Vec<u8>, AssembleError> {
+        let _ = results;
         let mut writer = Leb128Writer::new();
 
         Self::assemble_locals(locals, &mut writer);
@@ -124,7 +141,7 @@ impl Code {
         loop {
             if let Ok(end) = tokens.expect(&[TokenType::CloseParenthesis, TokenType::Eof]) {
                 if block_stack.len() > 0 {
-                    return Err(ParseError::out_of_bounds(
+                    return Err(AssembleError::out_of_bounds(
                         "missing 'end'",
                         end.position().into(),
                     ));
@@ -137,7 +154,7 @@ impl Code {
 
             let instr = tokens
                 .expect_any_keyword()
-                .map_err(|token| ParseError::invalid_mnemonic(&token))?;
+                .map_err(|token| AssembleError::invalid_mnemonic(&token))?;
             let instr = instr
                 .as_token()
                 .convert(WasmOpcode::from_str)
@@ -180,7 +197,7 @@ impl Code {
                 WasmOpcode::End => match block_stack.pop() {
                     Some(_) => writer.write_byte(mnemonic.leading_byte()).unwrap(),
                     None => {
-                        return Err(ParseError::out_of_bounds(
+                        return Err(AssembleError::out_of_bounds(
                             "Too many 'end'",
                             instr.position().into(),
                         ))
@@ -200,14 +217,14 @@ impl Code {
                             writer.write_byte(mnemonic.leading_byte()).unwrap();
                         }
                         _ => {
-                            return Err(ParseError::out_of_bounds(
+                            return Err(AssembleError::out_of_bounds(
                                 "'else' without 'if'",
                                 instr.position().into(),
                             ))
                         }
                     },
                     None => {
-                        return Err(ParseError::out_of_bounds(
+                        return Err(AssembleError::out_of_bounds(
                             "'else' without 'if'",
                             instr.position().into(),
                         ))
@@ -219,7 +236,7 @@ impl Code {
                     let target = match index {
                         IndexToken::Num(num) => {
                             let index = num.get();
-                            ParseError::check_index(
+                            AssembleError::check_index(
                                 index,
                                 0..(block_stack.len() as u32),
                                 num.position().into(),
@@ -238,7 +255,7 @@ impl Code {
                         match index {
                             IndexToken::Num(num) => {
                                 let index = num.get();
-                                ParseError::check_index(
+                                AssembleError::check_index(
                                     index,
                                     0..(block_stack.len() as u32),
                                     num.position().into(),
@@ -251,7 +268,7 @@ impl Code {
                         }
                     }
                     if targets.len() < 1 {
-                        return Err(ParseError::missing_token(
+                        return Err(AssembleError::missing_token(
                             &[TokenType::Identifier, TokenType::NumericLiteral],
                             &tokens.next().unwrap(),
                         ));
@@ -295,7 +312,7 @@ impl Code {
                     let localidx = match index {
                         IndexToken::Num(num) => {
                             let index = num.get();
-                            ParseError::check_index(
+                            AssembleError::check_index(
                                 index,
                                 0..(local_and_params.len() as u32),
                                 num.position().into(),
@@ -304,7 +321,10 @@ impl Code {
                         }
                         IndexToken::Id(id) => {
                             let localidx = local_ids.get(id.name()).ok_or(
-                                ParseError::undefined_identifier(id.name(), id.position().into()),
+                                AssembleError::undefined_identifier(
+                                    id.name(),
+                                    id.position().into(),
+                                ),
                             )?;
                             localidx.as_usize() as u32
                         }
@@ -528,7 +548,7 @@ impl Code {
                 }
 
                 _ => {
-                    return Err(ParseError::internal_inconsistency(
+                    return Err(AssembleError::internal_inconsistency(
                         "We are sorry, not yet supported",
                         instr.position().into(),
                     ))
@@ -573,6 +593,18 @@ enum BlockInstType {
     Else,
 }
 
+impl BlockInstType {
+    #[inline]
+    pub fn as_wasm(&self) -> WasmOpcode {
+        match self {
+            BlockInstType::Block => WasmOpcode::Block,
+            BlockInstType::Loop => WasmOpcode::Loop,
+            BlockInstType::If => WasmOpcode::If,
+            BlockInstType::Else => WasmOpcode::Else,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct BlockStackEntry {
     inst_type: BlockInstType,
@@ -591,10 +623,10 @@ impl BlockStack {
         &mut self,
         label: Option<&ast::identifier::Identifier>,
         value: BlockStackEntry,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         if let Some(label) = label {
             if self.labels.contains(&Some(label.name().to_string())) {
-                return Err(ParseError::duplicated_identifier(label));
+                return Err(AssembleError::duplicated_identifier(label));
             }
         }
         self.items.push(value);
@@ -615,14 +647,14 @@ impl BlockStack {
         self.items.len()
     }
 
-    pub fn solve(&self, label: &ast::identifier::Identifier) -> Result<u32, ParseError> {
+    pub fn solve(&self, label: &ast::identifier::Identifier) -> Result<u32, AssembleError> {
         for (index, target) in self.labels.iter().rev().enumerate() {
             let Some(target) = target else { continue };
             if target == label.name() {
                 return Ok(index as u32);
             }
         }
-        Err(ParseError::undefined_identifier(
+        Err(AssembleError::undefined_identifier(
             label.name(),
             label.position().into(),
         ))

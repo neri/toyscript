@@ -12,5 +12,4 @@ alloc = []
 std = ["alloc"]
 
 [dependencies]
-toyassembly = { path = "../toyassembly" }
 leb128 = { path = "../lib/leb128" }

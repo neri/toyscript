@@ -26,7 +26,7 @@ impl ConstExpr {
     pub fn expect<KEYWORD>(
         tokens: &mut TokenStream<KEYWORD>,
         valtype: ValType,
-    ) -> Result<ConstExpr, ParseError>
+    ) -> Result<ConstExpr, AssembleError>
     where
         KEYWORD: Copy + Clone + PartialEq + core::fmt::Debug + core::fmt::Display,
     {
@@ -44,7 +44,7 @@ impl ConstExpr {
 
             match token.token_type() {
                 TokenType::Eof => {
-                    return Err(ParseError::missing_token(
+                    return Err(AssembleError::missing_token(
                         &[TokenType::CloseParenthesis],
                         &token,
                     ));
@@ -59,7 +59,7 @@ impl ConstExpr {
                         continue;
                     }
 
-                    ParseError::check_types(
+                    AssembleError::check_types(
                         &[valtype],
                         &vt_stack,
                         TokenPosition((start as u32, token.position().end() as u32)).into(),
@@ -72,7 +72,7 @@ impl ConstExpr {
             let token = token
                 .convert(WasmOpcode::from_str)
                 .into_keyword()
-                .map_err(|token| ParseError::invalid_mnemonic(&token))?;
+                .map_err(|token| AssembleError::invalid_mnemonic(&token))?;
 
             match token.keyword() {
                 WasmOpcode::I32Const => {
@@ -92,14 +92,14 @@ impl ConstExpr {
                         expect(tokens, &[TokenType::CloseParenthesis])?;
                     }
 
-                    ParseError::check_types(
+                    AssembleError::check_types(
                         &[valtype],
                         &vt_stack,
                         TokenPosition((start as u32, token.position().end() as u32)).into(),
                     )?;
                     return Ok(ConstExpr(codes));
                 }
-                _ => return Err(ParseError::invalid_mnemonic(&token.as_token())),
+                _ => return Err(AssembleError::invalid_mnemonic(&token.as_token())),
             }
         }
     }

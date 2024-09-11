@@ -233,7 +233,7 @@ impl EnumDeclaration {
                 match token.token_type() {
                     TokenType::Symbol('}') => break,
                     TokenType::Identifier => {
-                        let identifier = Identifier::new(token.source(), token.position());
+                        let identifier = Identifier::from_token(&token);
 
                         let assignment = if tokens.expect_symbol('=').is_ok() {
                             Some(Expression::parse(tokens, &[TokenType::Symbol(',')])?)
@@ -322,7 +322,7 @@ impl TypeDescriptor {
     }
 
     #[inline]
-    pub fn as_string(&self) -> &String {
+    pub fn as_string(&self) -> String {
         self.identifier().as_string()
     }
 

@@ -6,14 +6,14 @@ use token::*;
 use types::ValType;
 
 #[derive(Debug)]
-pub struct ParseError {
-    pub(crate) kind: ParseErrorKind,
+pub struct AssembleError {
+    pub(crate) kind: AssembleErrorKind,
     pub(crate) explanation: Option<String>,
     pub(crate) position: ErrorPosition,
 }
 
 #[derive(Debug)]
-pub enum ParseErrorKind {
+pub enum AssembleErrorKind {
     TokenParseError(TokenError),
 
     SyntaxError,
@@ -31,9 +31,9 @@ pub enum ErrorPosition {
     Unspecified,
 }
 
-impl ParseError {
+impl AssembleError {
     #[inline]
-    pub fn with_kind(kind: ParseErrorKind, position: ErrorPosition) -> Self {
+    pub fn with_kind(kind: AssembleErrorKind, position: ErrorPosition) -> Self {
         Self {
             kind,
             explanation: None,
@@ -48,8 +48,8 @@ impl ParseError {
     ) -> Self {
         let explanation = Self::explanation_token_type_strings(expected)
             .map(|v| format!("Unexpected token {}. Expected {}.", token.token_type(), v,));
-        ParseError {
-            kind: ParseErrorKind::SyntaxError,
+        AssembleError {
+            kind: AssembleErrorKind::SyntaxError,
             explanation,
             position: token.position().into(),
         }
@@ -61,8 +61,8 @@ impl ParseError {
     {
         let explanation = Self::explanation_keyword_strings(expected)
             .map(|v| format!("Unexpected keyword {}. Expected {}.", token.token_type(), v,));
-        ParseError {
-            kind: ParseErrorKind::SyntaxError,
+        AssembleError {
+            kind: AssembleErrorKind::SyntaxError,
             explanation,
             position: token.position().into(),
         }
@@ -74,8 +74,8 @@ impl ParseError {
     {
         let position = token.position().into();
         let explanation = Some(format!("Invalid mnemonic: {:?}", token.source(),));
-        ParseError {
-            kind: ParseErrorKind::SyntaxError,
+        AssembleError {
+            kind: AssembleErrorKind::SyntaxError,
             explanation,
             position,
         }
@@ -83,8 +83,8 @@ impl ParseError {
 
     pub fn invalid_number(source: &str, position: ErrorPosition) -> Self {
         let explanation = Some(format!("Invalid number: {:?}", source));
-        ParseError {
-            kind: ParseErrorKind::SyntaxError,
+        AssembleError {
+            kind: AssembleErrorKind::SyntaxError,
             explanation,
             position,
         }
@@ -104,8 +104,8 @@ impl ParseError {
                 position = TokenPosition::new_at(position.start() + index);
             }
         }
-        ParseError {
-            kind: ParseErrorKind::SyntaxError,
+        AssembleError {
+            kind: AssembleErrorKind::SyntaxError,
             explanation: Some(explanation.to_owned()),
             position: position.into(),
         }
@@ -113,8 +113,8 @@ impl ParseError {
 
     pub fn invalid_identifier(source: &str, position: ErrorPosition) -> Self {
         let explanation = Some(format!("Invalid identifier: {:?}", source));
-        ParseError {
-            kind: ParseErrorKind::SyntaxError,
+        AssembleError {
+            kind: AssembleErrorKind::SyntaxError,
             explanation,
             position,
         }
@@ -122,8 +122,8 @@ impl ParseError {
 
     pub fn undefined_identifier(source: &str, position: ErrorPosition) -> Self {
         let explanation = Some(format!("Not found in this scope: {:?}", source));
-        ParseError {
-            kind: ParseErrorKind::NameError,
+        AssembleError {
+            kind: AssembleErrorKind::NameError,
             explanation,
             position,
         }
@@ -135,8 +135,8 @@ impl ParseError {
             "The identifier {:?} has already been defined",
             identifier.name()
         ));
-        ParseError {
-            kind: ParseErrorKind::NameError,
+        AssembleError {
+            kind: AssembleErrorKind::NameError,
             explanation,
             position: identifier.position().into(),
         }
@@ -144,8 +144,8 @@ impl ParseError {
 
     #[inline]
     pub fn out_of_bounds(explain: &str, position: ErrorPosition) -> Self {
-        ParseError {
-            kind: ParseErrorKind::OutOfBounds,
+        AssembleError {
+            kind: AssembleErrorKind::OutOfBounds,
             explanation: Some(explain.to_owned()),
             position,
         }
@@ -155,10 +155,10 @@ impl ParseError {
         expected: &[ValType],
         actual: &[ValType],
         position: ErrorPosition,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         (expected == actual)
             .then(|| ())
-            .ok_or_else(|| ParseError::type_mismatch(expected, actual, position))
+            .ok_or_else(|| AssembleError::type_mismatch(expected, actual, position))
     }
 
     #[inline]
@@ -172,8 +172,8 @@ impl ParseError {
             Self::explanation_valtype_strings(actual),
             Self::explanation_valtype_strings(expected),
         ));
-        ParseError {
-            kind: ParseErrorKind::TypeMismatch,
+        AssembleError {
+            kind: AssembleErrorKind::TypeMismatch,
             explanation,
             position,
         }
@@ -181,8 +181,8 @@ impl ParseError {
 
     #[inline]
     pub fn internal_inconsistency(explain: &str, position: ErrorPosition) -> Self {
-        ParseError {
-            kind: ParseErrorKind::InternalError,
+        AssembleError {
+            kind: AssembleErrorKind::InternalError,
             explanation: (explain.len() > 0).then(|| explain.to_owned()),
             position,
         }
@@ -325,7 +325,7 @@ impl ParseError {
         index: T,
         bounds: Range<T>,
         position: TokenPosition,
-    ) -> Result<T, ParseError>
+    ) -> Result<T, AssembleError>
     where
         T: PartialOrd + core::fmt::Debug,
     {
@@ -336,8 +336,8 @@ impl ParseError {
                 "'{:?}' is an invalid value. The valid range is between {:?} and {:?}",
                 index, bounds.start, bounds.end,
             ));
-            Err(ParseError {
-                kind: ParseErrorKind::OutOfBounds,
+            Err(AssembleError {
+                kind: AssembleErrorKind::OutOfBounds,
                 explanation,
                 position: position.into(),
             })

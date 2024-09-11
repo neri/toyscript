@@ -7,7 +7,6 @@ use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 use error::AssembleError;
 use opt::MinimalCodeOptimizer;
-use toyassembly::types::ValType;
 
 pub struct Function {
     signature: String,
@@ -15,7 +14,7 @@ pub struct Function {
     params: Vec<LocalVarDescriptor>,
     results: Vec<LocalVarDescriptor>,
     locals: Vec<LocalVarDescriptor>,
-    codes: Vec<u32>,
+    codes: Arc<Vec<u32>>,
 }
 
 impl Function {
@@ -27,15 +26,11 @@ impl Function {
         let mut results_ = Vec::new();
         if let Some((type_id, primitive_type)) = results {
             if primitive_type != Primitive::Void {
-                let val_type = primitive_type
-                    .wasm_binding()
-                    .ok_or(AssembleError::InvalidPrimitive)?;
                 results_.push(LocalVarDescriptor {
                     index: LocalIndex(0),
                     identifier: None,
                     high_context_type: type_id.to_owned(),
                     primitive_type,
-                    val_type,
                     is_mut: true,
                 });
             }
@@ -53,6 +48,36 @@ impl Function {
             block_stack: Vec::new(),
             local_index: AtomicU32::new(0),
         })
+    }
+
+    #[inline]
+    pub fn signature(&self) -> &str {
+        &self.signature
+    }
+
+    #[inline]
+    pub fn exports(&self) -> Option<&str> {
+        self.exports.as_ref().map(|v| v.as_str())
+    }
+
+    #[inline]
+    pub fn params(&self) -> &[LocalVarDescriptor] {
+        &self.params
+    }
+
+    #[inline]
+    pub fn results(&self) -> &[LocalVarDescriptor] {
+        &self.results
+    }
+
+    #[inline]
+    pub fn locals(&self) -> &[LocalVarDescriptor] {
+        &self.locals
+    }
+
+    #[inline]
+    pub fn codes(&self) -> &Arc<Vec<u32>> {
+        &self.codes
     }
 }
 
@@ -96,15 +121,11 @@ impl FunctionBuilder {
         primitive_type: Primitive,
     ) -> Result<LocalIndex, AssembleError> {
         let local_idx = LocalIndex(self.local_index.fetch_add(1, Ordering::SeqCst));
-        let val_type = primitive_type
-            .wasm_binding()
-            .ok_or(AssembleError::InvalidPrimitive)?;
         let item = LocalVarDescriptor {
             index: local_idx,
             identifier: Some(identifier.to_owned()),
             high_context_type: high_context_type.to_owned(),
             primitive_type,
-            val_type,
             is_mut: false,
         };
         self.params.push(item);
@@ -123,15 +144,11 @@ impl FunctionBuilder {
         if expected != index {
             return Err(AssembleError::InvalidParameter);
         }
-        let val_type = primitive_type
-            .wasm_binding()
-            .ok_or(AssembleError::InvalidPrimitive)?;
         let item = LocalVarDescriptor {
             index,
             identifier: Some(identifier.to_owned()),
             high_context_type: high_context_type.to_owned(),
             primitive_type,
-            val_type,
             is_mut,
         };
         self.locals.push(item);
@@ -172,7 +189,7 @@ impl FunctionBuilder {
             params,
             results,
             locals,
-            codes,
+            codes: Arc::new(codes),
         })
     }
 }
@@ -181,34 +198,32 @@ struct CoreDumper<'a>(&'a [u32]);
 
 impl core::fmt::Debug for CoreDumper<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_list()
-            .entries(CodeStreamIter {
-                buf: self.0,
-                index: 0,
-            })
-            .finish()
+        f.debug_list().entries(CodeStreamIter::new(self.0)).finish()
     }
 }
 
-struct CodeStreamIter<'a> {
+pub struct CodeStreamIter<'a> {
     buf: &'a [u32],
     index: usize,
 }
 
+impl<'a> CodeStreamIter<'a> {
+    #[inline]
+    pub fn new(buf: &'a [u32]) -> Self {
+        Self { buf, index: 0 }
+    }
+}
+
 impl<'a> Iterator for CodeStreamIter<'a> {
-    type Item = CodeFragment;
+    type Item = CodeFragment<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let len_opc = self.buf.get(self.index)?;
-        self.index += 1;
         let len = (len_opc >> 16) as usize;
         if len > 0 {
             let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
-            let mut params = Vec::with_capacity(len);
-            for _ in 1..len {
-                params.push(*self.buf.get(self.index)?);
-                self.index += 1;
-            }
+            let params = self.buf.get(self.index + 1..self.index + len)?;
+            self.index += len;
             Some(CodeFragment { opcode, params })
         } else {
             None
@@ -565,12 +580,24 @@ impl From<u64> for Operand {
     }
 }
 
-pub struct CodeFragment {
+pub struct CodeFragment<'a> {
     opcode: Op,
-    params: Vec<u32>,
+    params: &'a [u32],
 }
 
-impl core::fmt::Debug for CodeFragment {
+impl CodeFragment<'_> {
+    #[inline]
+    pub const fn opcode(&self) -> Op {
+        self.opcode
+    }
+
+    #[inline]
+    pub fn params(&self) -> &[u32] {
+        &self.params
+    }
+}
+
+impl core::fmt::Debug for CodeFragment<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
@@ -638,21 +665,19 @@ impl core::fmt::Debug for LocalIter<'_> {
             if let Some(identifier) = item.identifier.as_ref() {
                 writeln!(
                     f,
-                    "    ${}: {} /* {:?}: {:?} => {} */",
+                    "    ${}: {} /* {:?}: {:?} */",
                     item.index.as_u32(),
-                    item.val_type,
+                    item.primitive_type,
                     identifier,
                     item.high_context_type,
-                    item.primitive_type,
                 )?;
             } else {
                 writeln!(
                     f,
-                    "    ${}: {} /* {} => {} */",
+                    "    ${}: {} /* {} */",
                     item.index.as_u32(),
-                    item.val_type,
-                    item.high_context_type,
                     item.primitive_type,
+                    item.high_context_type,
                 )?;
             }
         }
@@ -661,11 +686,22 @@ impl core::fmt::Debug for LocalIter<'_> {
 }
 
 #[allow(dead_code)]
-struct LocalVarDescriptor {
+pub struct LocalVarDescriptor {
     index: LocalIndex,
     identifier: Option<String>,
     high_context_type: String,
     primitive_type: Primitive,
-    val_type: ValType,
     is_mut: bool,
+}
+
+impl LocalVarDescriptor {
+    #[inline]
+    pub fn identifier(&self) -> Option<&str> {
+        self.identifier.as_ref().map(|v| v.as_str())
+    }
+
+    #[inline]
+    pub fn primitive_type(&self) -> Primitive {
+        self.primitive_type
+    }
 }

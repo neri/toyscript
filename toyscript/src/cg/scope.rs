@@ -237,11 +237,6 @@ impl VariableDescriptor {
     }
 
     #[inline]
-    pub fn optimistic_inferred_type(&self) -> Option<&Arc<TypeDescriptor>> {
-        self.inferred_type.optimistic_type()
-    }
-
-    #[inline]
     pub fn inferred_type(&self) -> &InferredType {
         &self.inferred_type
     }

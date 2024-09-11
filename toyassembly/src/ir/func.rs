@@ -4,7 +4,7 @@ use ir::{
     code::FuncCode,
     export::ExportDesc,
     index::{FuncIndex, LocalIndex, TypeIndex},
-    types::IdType,
+    types::{IdType, Type},
     WasmSectionId,
 };
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
@@ -16,7 +16,7 @@ impl Functions {
     pub(super) fn convert(
         module: &mut Module,
         functions: Vec<ast::function::Function>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         let n_imports = module.imports.num_import_funcs();
         for ast_func in functions {
             if matches!(ast_func.vis(), Some(ast::types::ExtVis::Import(_))) {
@@ -57,12 +57,9 @@ impl Functions {
                 }
             }
 
-            let mut local_and_params = module
-                .get_type(typeidx)
-                .params()
-                .iter()
-                .map(|v| *v)
-                .collect::<Vec<_>>();
+            let func_type = module.get_type(typeidx);
+            let results = func_type.results().to_vec();
+            let mut local_and_params = func_type.params().iter().map(|v| *v).collect::<Vec<_>>();
             let mut locals = Vec::new();
             for local in ast_locals.iter() {
                 if let Some(id) = local.identifier() {
@@ -72,8 +69,8 @@ impl Functions {
                         LocalIndex((local_and_params.len()) as u32),
                     )?;
                 }
-                local_and_params.push(local.valtype().clone());
-                locals.push(local.valtype().clone());
+                local_and_params.push(local.valtype());
+                locals.push(local.valtype());
             }
 
             if let Some(vis) = vis {
@@ -89,10 +86,74 @@ impl Functions {
 
             module.funcs.0.push(Func(typeidx));
 
-            module
-                .codes
-                .0
-                .push(FuncCode::new(locals, local_ids, local_and_params, instr))
+            let code = FuncCode::new(results, locals, local_ids, local_and_params, instr);
+            module.codes.0.push(code);
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn process_tir(
+        module: &mut Module,
+        functions: &[toyir::Function],
+    ) -> Result<(), AssembleError> {
+        let n_imports = module.imports.num_import_funcs();
+        for tir_func in functions {
+            let funcidx = FuncIndex((n_imports + module.funcs.0.len()) as u32);
+
+            let mut local_ids = BTreeMap::default();
+
+            let id =
+                ast::identifier::Identifier::from_str(tir_func.signature(), TokenPosition::empty())
+                    .unwrap();
+
+            module.register_ast_name(&id, IdType::Func(funcidx))?;
+
+            let results = tir_func
+                .results()
+                .iter()
+                .map(|v| v.primitive_type().wasm_binding().unwrap())
+                .collect::<Vec<_>>();
+
+            let mut local_and_params = Vec::new();
+            for param in tir_func.params() {
+                let valtype = param.primitive_type().wasm_binding().unwrap();
+                local_and_params.push(valtype);
+            }
+
+            let type_use = Type::from_iter(
+                local_and_params.iter().map(|v| *v),
+                results.iter().map(|v| *v),
+            );
+            let typeidx = module.types.define(type_use)?;
+
+            module.funcs.0.push(Func(typeidx));
+
+            let mut locals = Vec::new();
+            for local in tir_func.locals() {
+                if let Some(identifier) = local.identifier() {
+                    local_ids.insert(
+                        identifier.to_owned(),
+                        LocalIndex((local_and_params.len()) as u32),
+                    );
+                }
+                let valtype = local.primitive_type().wasm_binding().unwrap();
+                local_and_params.push(valtype);
+                locals.push(valtype);
+            }
+
+            if let Some(export) = tir_func.exports() {
+                module.exports.export(export, ExportDesc::Func(funcidx))?;
+            }
+
+            let code = FuncCode::new(
+                results,
+                locals,
+                local_ids,
+                local_and_params,
+                wasm::code::Code::ToyIr(wasm::code::ToyIr(tir_func.codes().clone())),
+            );
+            module.codes.0.push(code);
         }
 
         Ok(())
@@ -112,10 +173,10 @@ impl Functions {
         local_ids: &mut BTreeMap<String, LocalIndex>,
         id: &ast::identifier::Identifier,
         value: LocalIndex,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         let key = id.name().to_owned();
         if local_ids.get(&key).is_some() {
-            return Err(ParseError::duplicated_identifier(id));
+            return Err(AssembleError::duplicated_identifier(id));
         }
         local_ids.insert(key, value);
         Ok(())

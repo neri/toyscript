@@ -10,7 +10,7 @@ impl Elems {
     pub(super) fn convert(
         module: &mut Module,
         ast_elems: Vec<ast::elem::Elem>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         for ast_elem in ast_elems {
             let ast::elem::Elem {
                 // id: _,

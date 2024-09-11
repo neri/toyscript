@@ -18,7 +18,7 @@ impl Tables {
     pub(super) fn convert(
         module: &mut Module,
         tables: Vec<ast::table::Table>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         for ast_table in tables {
             if let Some(id) = ast_table.id() {
                 let tableidx = TableIndex(module.tables.0.len() as u32);

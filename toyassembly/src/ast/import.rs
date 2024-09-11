@@ -40,7 +40,7 @@ impl Import {
 impl ModuleName for Import {
     const IDENTIFIER: Keyword = Keyword::Import;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let mod_name = StringLiteral::expect(tokens)?;
 
         let name = StringLiteral::expect(tokens)?;
@@ -51,7 +51,7 @@ impl ModuleName for Import {
             ImportDescriptor::Global(global)
         } else {
             expect(tokens, &[TokenType::OpenParenthesis])?;
-            return Err(ParseError::unexpected_keyword(
+            return Err(AssembleError::unexpected_keyword(
                 &[
                     Keyword::Func,
                     Keyword::Table,
@@ -93,7 +93,7 @@ impl ImportFunc {
 impl ModuleName for ImportFunc {
     const IDENTIFIER: Keyword = Keyword::Func;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let typeuse = TypeUse::expect(tokens)?;
@@ -125,7 +125,7 @@ impl ImportGlobal {
 impl ModuleName for ImportGlobal {
     const IDENTIFIER: Keyword = Keyword::Global;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let global_type = GlobalType::expect(tokens)?;
@@ -158,7 +158,7 @@ impl ImportAbbr {
 impl ModuleName for ImportAbbr {
     const IDENTIFIER: Keyword = Keyword::Import;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let mod_name = StringLiteral::expect(tokens)?;
 
         let name = StringLiteral::expect(tokens)?;

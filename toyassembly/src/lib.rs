@@ -39,26 +39,25 @@ pub struct ToyAssembly;
 impl ToyAssembly {
     fn _from_src<F, R>(file_name: &str, src: Vec<u8>, kernel: F) -> Result<R, String>
     where
-        F: FnOnce(&mut TokenStream<Keyword>) -> Result<R, ParseError>,
+        F: FnOnce(&mut TokenStream<Keyword>) -> Result<R, AssembleError>,
     {
         let src = Arc::new(src);
-        let tokens =
-            Tokenizer::new(src.clone(), Keyword::from_str).map_err(|e| {
-                let position = ErrorPosition::CharAt(e.position().0, e.position().1);
-                ParseError::with_kind(ParseErrorKind::TokenParseError(e), position)
-                    .to_detail_string(file_name, &src, &[])
-            })?;
+        let tokens = Tokenizer::new(src.clone(), Keyword::from_str).map_err(|e| {
+            let position = ErrorPosition::CharAt(e.position().0, e.position().1);
+            AssembleError::with_kind(AssembleErrorKind::TokenParseError(e), position)
+                .to_detail_string(file_name, &src, &[])
+        })?;
 
         kernel(&mut tokens.stream())
             .map_err(|e| e.to_detail_string(file_name, &src, tokens.line_positions()))
     }
 
-    pub fn debug_ast(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+    pub fn explain_ast(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| ast::AstModule::from_tokens(tokens))
             .map(|v| format!("{:#?}", v))
     }
 
-    pub fn debug_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+    pub fn explain_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| {
             let ast_module = ast::AstModule::from_tokens(tokens)?;
             ir::Module::from_ast(ast_module)
@@ -72,10 +71,17 @@ impl ToyAssembly {
             let ir_module = ir::Module::from_ast(ast_module)?;
 
             ir_module.write_to_wasm().map_err(|e| {
-                ParseError::internal_inconsistency(&format!("{:?}", e), ErrorPosition::Unspecified)
+                AssembleError::internal_inconsistency(
+                    &format!("{:?}", e),
+                    ErrorPosition::Unspecified,
+                )
             })
         })
     }
+}
+
+pub trait WasmBinding<T, E> {
+    fn wasm_binding(&self) -> Result<T, E>;
 }
 
 pub struct DumpHex<'a, T: core::fmt::Debug + core::fmt::LowerHex>(&'a [T]);
@@ -102,47 +108,47 @@ impl<T: core::fmt::Debug + core::fmt::LowerHex> core::fmt::Debug for DumpHex<'_,
 pub(crate) fn expect<KEYWORD>(
     tokens: &mut TokenStream<KEYWORD>,
     expected: &[TokenType<KEYWORD>],
-) -> Result<Token<KEYWORD>, ParseError>
+) -> Result<Token<KEYWORD>, AssembleError>
 where
     KEYWORD: core::fmt::Display + core::fmt::Debug + Copy + PartialEq,
 {
     tokens
         .expect(expected)
-        .map_err(|e| ParseError::missing_token(expected, &e))
+        .map_err(|e| AssembleError::missing_token(expected, &e))
 }
 
 pub(crate) fn expect_immed<KEYWORD>(
     tokens: &mut TokenStream<KEYWORD>,
     expected: &[TokenType<KEYWORD>],
-) -> Result<Token<KEYWORD>, ParseError>
+) -> Result<Token<KEYWORD>, AssembleError>
 where
     KEYWORD: core::fmt::Display + core::fmt::Debug + Copy + PartialEq,
 {
     tokens
         .expect_immed(expected)
-        .map_err(|e| ParseError::missing_token(expected, &e))
+        .map_err(|e| AssembleError::missing_token(expected, &e))
 }
 
 pub(crate) fn expect_keywords<KEYWORD>(
     tokens: &mut TokenStream<KEYWORD>,
     expected: &[KEYWORD],
-) -> Result<KeywordToken<KEYWORD>, ParseError>
+) -> Result<KeywordToken<KEYWORD>, AssembleError>
 where
     KEYWORD: core::fmt::Display + core::fmt::Debug + Copy + PartialEq,
 {
     tokens
         .expect_keywords(expected)
-        .map_err(|e| ParseError::unexpected_keyword(expected, &e))
+        .map_err(|e| AssembleError::unexpected_keyword(expected, &e))
 }
 
 pub(crate) fn expect_valtype<KEYWORD>(
     tokens: &mut TokenStream<KEYWORD>,
-) -> Result<types::ValType, ParseError>
+) -> Result<types::ValType, AssembleError>
 where
     KEYWORD: core::fmt::Display + core::fmt::Debug + Copy + PartialEq,
 {
     let token = expect(tokens, &[TokenType::Identifier])?;
-    types::ValType::from_str(token.source()).ok_or(ParseError::invalid_identifier(
+    types::ValType::from_str(token.source()).ok_or(AssembleError::invalid_identifier(
         token.source(),
         token.position().into(),
     ))
@@ -151,7 +157,7 @@ where
 pub(crate) fn try_expect_free_keyword<KEYWORD>(
     tokens: &mut TokenStream<KEYWORD>,
     keyword: &str,
-) -> Result<Option<Token<KEYWORD>>, ParseError>
+) -> Result<Option<Token<KEYWORD>>, AssembleError>
 where
     KEYWORD: core::fmt::Display + core::fmt::Debug + Copy + PartialEq,
 {

@@ -23,6 +23,8 @@ impl CodeGen {
 
         for statement in ast.program() {
             match statement {
+                Statement::Eof(_) | Statement::TypeAlias(_, _) => {}
+
                 Statement::Function(func_decl) => {
                     let func_desc = types.function(func_decl.identifier().as_str()).ok_or(
                         CompileError::internal_inconsistency(
@@ -37,7 +39,6 @@ impl CodeGen {
                         module.add_function(function);
                     }
                 }
-                Statement::Eof(_) | Statement::TypeAlias(_, _) => (),
 
                 Statement::Block(_)
                 | Statement::Break(_)
@@ -49,7 +50,7 @@ impl CodeGen {
                 | Statement::Variable(_)
                 | Statement::WhileStatement(_, _)
                 | Statement::Enum(_)
-                | Statement::ForStatement(_, _, _, _) => {
+                | Statement::ForStatement(_, _) => {
                     return Err(CompileError::out_of_context(
                         format!("{:#?}", statement).as_str(),
                         TokenPosition::empty(),
@@ -66,6 +67,13 @@ impl CodeGen {
         func_desc: &types::function::FunctionDescriptor,
         types: &TypeSystem,
     ) -> Result<toyir::Function, CompileError> {
+        if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
+            return Err(CompileError::internal_inconsistency(
+                "",
+                func_decl.position().into(),
+            ));
+        }
+
         let var_storage = VariableStorage::new(types);
         let mut scope = var_storage.root_scope();
 
@@ -87,7 +95,7 @@ impl CodeGen {
             let mut var = VariableDescriptor::from_parameter(param, type_desc);
             let infered_type = var
                 .inferred_type()
-                .pessimistic_type()
+                .strict_type()
                 .ok_or(CompileError::could_not_infer(var.identifier()))?;
             let primitive_type =
                 infered_type
@@ -104,58 +112,55 @@ impl CodeGen {
             scope.declare_local(var)?;
         }
 
-        let function = if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
-            unreachable!()
-        } else {
-            let block_type = Self::process_block(
-                &mut builder.assembler(),
-                func_decl.body(),
-                &mut scope.scoped(None, None),
-                &return_type,
+        let block_type = Self::process_block(
+            &mut builder.assembler(),
+            func_decl.body(),
+            &mut scope.scoped(None, None),
+            &return_type,
+        )?;
+
+        if !match block_type {
+            Some(ref v) => v.is_never() || *v == return_type,
+            None => return_type.is_void(),
+        } {
+            if block_type.is_some() {
+                return Err(CompileError::type_mismatch(
+                    &return_type,
+                    &block_type.unwrap_or(types.builtin_void()),
+                    func_decl.position(),
+                ));
+            } else {
+                return Err(CompileError::return_required(
+                    &return_type,
+                    func_decl.position(),
+                ));
+            }
+        }
+
+        for var_desc in var_storage
+            .into_vars()
+            .iter()
+            .skip(func_desc.param_types().len())
+        {
+            let type_desc = var_desc
+                .inferred_type()
+                .strict_type()
+                .ok_or(CompileError::could_not_infer(var_desc.identifier()))?;
+            builder.declare_local(
+                var_desc.index(),
+                &var_desc.identifier().as_string(),
+                type_desc.identifier(),
+                type_desc.primitive_type().unwrap_or(Primitive::Void),
+                var_desc.is_mutable(),
             )?;
+        }
 
-            if !match block_type {
-                Some(ref v) => v.is_never() || *v == return_type,
-                None => return_type.is_void(),
-            } {
-                if block_type.is_some() {
-                    return Err(CompileError::type_mismatch(
-                        &return_type,
-                        &block_type.unwrap_or(types.builtin_void()),
-                        func_decl.position(),
-                    ));
-                } else {
-                    return Err(CompileError::return_required(
-                        &return_type,
-                        func_decl.position(),
-                    ));
-                }
-            }
-
-            for var_desc in var_storage
-                .into_vars()
-                .iter()
-                .skip(func_desc.param_types().len())
-            {
-                let type_desc = var_desc
-                    .optimistic_inferred_type()
-                    .ok_or(CompileError::could_not_infer(var_desc.identifier()))?;
-                builder.declare_local(
-                    var_desc.index(),
-                    &var_desc.identifier().as_string(),
-                    type_desc.identifier(),
-                    type_desc.primitive_type().unwrap_or(Primitive::Void),
-                    var_desc.is_mutable(),
-                )?;
-            }
-
-            builder.build().map_err(|err| {
-                CompileError::internal_inconsistency(
-                    &format!("Internal Assembler Error: {:?}", err),
-                    ErrorPosition::Unspecified,
-                )
-            })?
-        };
+        let function = builder.build().map_err(|err| {
+            CompileError::internal_inconsistency(
+                &format!("Internal Assembler Error: {:?}", err),
+                ErrorPosition::Unspecified,
+            )
+        })?;
 
         Ok(function)
     }
@@ -194,7 +199,7 @@ impl CodeGen {
                         var_desc.set_index(asm.alloc_local());
                         let localidx = var_desc.index();
 
-                        let expected_type = var_desc.optimistic_inferred_type();
+                        let expected_type = var_desc.inferred_type().optimistic_type();
                         if let Some(expr) = var_decl.assignment() {
                             let expr_position = expr.position();
                             let expr_type =
@@ -390,7 +395,7 @@ impl CodeGen {
                     }
                 }
 
-                Statement::ForStatement(_, _, _, _)
+                Statement::ForStatement(_, _)
                 | Statement::Enum(_)
                 | Statement::TypeAlias(_, _)
                 | Statement::Function(_)
@@ -742,7 +747,7 @@ impl CodeGen {
                     let lhs_type = Self::generate_unary(asm, lhs, scope)?;
                     let _rhs_type = Self::generate_unary(asm, rhs, scope)?;
                     let is_signed = lhs_type
-                        .pessimistic_type()
+                        .strict_type()
                         .and_then(|v| scope.types().resolve_primitive(v))
                         .map(|v| v.is_signed())
                         .unwrap_or(false);
@@ -763,7 +768,7 @@ impl CodeGen {
                     let lhs_type = Self::generate_unary(asm, lhs, scope)?;
                     let _rhs_type = Self::generate_unary(asm, rhs, scope)?;
                     let is_signed = lhs_type
-                        .pessimistic_type()
+                        .strict_type()
                         .and_then(|v| scope.types().resolve_primitive(v))
                         .map(|v| v.is_signed())
                         .unwrap_or(false);
@@ -820,7 +825,7 @@ impl CodeGen {
                     if !matches!(assign_operator, BinaryOperator::Assign) {
                         let is_signed = var_desc
                             .inferred_type()
-                            .pessimistic_type()
+                            .strict_type()
                             .and_then(|v| scope.types().resolve_primitive(v))
                             .map(|v| v.is_signed())
                             .unwrap_or(false);

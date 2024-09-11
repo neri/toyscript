@@ -31,7 +31,6 @@ struct PrimitiveTypeDesc {
     bits: usize,
     size_of: usize,
     align_of: usize,
-    wasm_binding: String,
     kind: TypeKind,
 }
 
@@ -64,7 +63,6 @@ fn make_primitive(src_path: &str, dest_path: &str, class_name: &str, comment: &s
         let bits = cols.next().unwrap().parse::<usize>().unwrap();
         let size_of = cols.next().unwrap().parse::<usize>().unwrap();
         let align_of = cols.next().unwrap().parse::<usize>().unwrap();
-        let wasm_binding = to_camel_case_identifier(cols.next().unwrap());
         let kind = TypeKind::from_str(cols.next().unwrap()).unwrap();
 
         let primitive = PrimitiveTypeDesc {
@@ -73,7 +71,6 @@ fn make_primitive(src_path: &str, dest_path: &str, class_name: &str, comment: &s
             bits,
             size_of,
             align_of,
-            wasm_binding: wasm_binding.to_owned(),
             kind,
         };
 
@@ -99,8 +96,6 @@ fn make_primitive(src_path: &str, dest_path: &str, class_name: &str, comment: &s
         "//! {comment}
 
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
-
-use toyassembly::types::ValType;
 
 /// {comment}
 #[non_exhaustive]
@@ -302,28 +297,6 @@ impl {class_name} {{
         }}
     }}
 
-    pub const fn wasm_binding(&self) -> Option<ValType> {{
-        match self {{
-"
-    )
-    .unwrap();
-
-    for type_desc in primitives.values() {
-        if !type_desc.wasm_binding.is_empty() {
-            writeln!(
-                os,
-                "            Self::{} => Some(ValType::{}),",
-                type_desc.identifier, type_desc.wasm_binding,
-            )
-            .unwrap();
-        }
-    }
-
-    write!(
-        os,
-        "            _ => None
-        }}
-    }}
 }}
 
 impl core::fmt::Display for {class_name} {{

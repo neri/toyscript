@@ -19,7 +19,7 @@ pub struct Global {
 impl ModuleName for Global {
     const IDENTIFIER: Keyword = Keyword::Global;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let vis = ExtVis::try_expect(tokens)?;
@@ -50,7 +50,7 @@ pub struct GlobalType {
 }
 
 impl GlobalType {
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         if let Some(valtype) = try_expect_module::<GlobalTypeMut>(tokens)? {
             Ok(Self {
                 valtype: valtype.0,
@@ -77,7 +77,7 @@ struct GlobalTypeMut(ValType);
 impl ModuleName for GlobalTypeMut {
     const IDENTIFIER: Keyword = Keyword::Mut;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let valtype = expect_valtype(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;

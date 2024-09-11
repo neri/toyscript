@@ -21,7 +21,7 @@ impl Codes {
             writer.write(self.0.len())?;
             for item in self.0.iter() {
                 match item.content {
-                    Code::Source(_) => panic!("panics"),
+                    Code::Source(_) | Code::ToyIr(_) => panic!("panics"),
                     Code::Binary(ref bin) => {
                         writer.write_blob(bin.as_bytes())?;
                     }
@@ -38,8 +38,8 @@ impl core::fmt::Debug for Codes {
     }
 }
 
-#[derive(Debug)]
 pub struct FuncCode {
+    results: Vec<ValType>,
     locals: Vec<ValType>,
     local_ids: BTreeMap<String, LocalIndex>,
     local_and_params: Vec<ValType>,
@@ -49,12 +49,14 @@ pub struct FuncCode {
 impl FuncCode {
     #[inline]
     pub fn new(
+        results: Vec<ValType>,
         locals: Vec<ValType>,
         local_ids: BTreeMap<String, LocalIndex>,
         local_and_params: Vec<ValType>,
         content: Code,
     ) -> Self {
         Self {
+            results,
             locals,
             local_ids,
             local_and_params,
@@ -63,9 +65,10 @@ impl FuncCode {
     }
 
     #[inline]
-    pub fn assemble(&mut self, module: &Module) -> Result<(), ParseError> {
+    pub fn assemble(&mut self, module: &Module) -> Result<(), AssembleError> {
         self.content.assemble(
             module,
+            &self.results,
             &self.locals,
             &self.local_ids,
             &self.local_and_params,
@@ -75,5 +78,17 @@ impl FuncCode {
     #[inline]
     pub fn content(&self) -> &Code {
         &self.content
+    }
+}
+
+impl core::fmt::Debug for FuncCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FuncCode")
+            .field("results", &self.results)
+            // .field("locals", &self.locals)
+            // .field("local_ids", &self.local_ids)
+            .field("local_and_params", &self.local_and_params)
+            .field("content", &self.content)
+            .finish()
     }
 }

@@ -47,7 +47,7 @@ impl Function {
 impl ModuleName for Function {
     const IDENTIFIER: Keyword = Keyword::Func;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let vis = ExtVis::try_expect(tokens)?;

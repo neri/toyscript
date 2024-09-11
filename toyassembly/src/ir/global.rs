@@ -17,7 +17,7 @@ impl Globals {
     pub(super) fn convert(
         module: &mut Module,
         globals: Vec<ast::global::Global>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         let n_imports = module.imports.num_import_globals();
         for ast_global in globals {
             if matches!(ast_global.vis, Some(ast::types::ExtVis::Import(_))) {

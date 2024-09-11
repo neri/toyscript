@@ -3,6 +3,9 @@
 mod _valtype;
 pub use _valtype::*;
 
+use crate::WasmBinding;
+use toyir::Primitive;
+
 impl ValType {
     #[inline]
     pub const fn bits_of(&self) -> usize {
@@ -51,6 +54,29 @@ impl ValType {
             ValType::I64 => "l",
             ValType::F32 => "f",
             ValType::F64 => "d",
+        }
+    }
+}
+
+impl WasmBinding<ValType, ()> for Primitive {
+    fn wasm_binding(&self) -> Result<ValType, ()> {
+        match self {
+            Primitive::Bool
+            | Primitive::I8
+            | Primitive::U8
+            | Primitive::I16
+            | Primitive::U16
+            | Primitive::I32
+            | Primitive::U32 => Ok(ValType::I32),
+
+            Primitive::I64 | Primitive::U64 => Ok(ValType::I64),
+
+            Primitive::F32 => Ok(ValType::F32),
+
+            Primitive::F64 => Ok(ValType::F64),
+
+            // Primitive::Void
+            _ => Err(()),
         }
     }
 }

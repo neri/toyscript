@@ -23,7 +23,7 @@ impl Exports {
     pub(super) fn convert(
         module: &mut Module,
         exports: Vec<ast::export::Export>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         for ast_export in exports {
             let name = ast_export.name();
             let desc = match ast_export.desc() {
@@ -70,13 +70,13 @@ impl Exports {
         Ok(WasmSectionId::Export)
     }
 
-    pub fn export(
+    pub fn export<S: ?Sized + ToString>(
         &mut self,
-        name: &ast::literal::StringLiteral,
+        name: &S,
         desc: ExportDesc,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         self.0.push(Export {
-            name: name.get().to_owned(),
+            name: name.to_string(),
             desc,
         });
         Ok(())

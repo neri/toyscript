@@ -55,7 +55,7 @@ fn main() {
     let _ = to_run;
 
     let src = read_to_string(path_input.as_str()).unwrap();
-    let text = match ToyScript::debug_ir(path_input.as_str(), src.into_bytes()) {
+    let text = match ToyScript::to_wasm(path_input.as_str(), src.into_bytes()) {
         Ok(v) => v,
         Err(err) => {
             eprintln!("{}", err);

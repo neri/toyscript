@@ -14,8 +14,8 @@ A Lightweight toy language environment with high affinity for WebAssembly
 
 ### Short-Term Goals
 
-* TypeScript-like toy language environment
-* A subset of the WebAssembly MVP environment
+* Milestone-1: A subset of the WebAssembly MVP environment
+* Milestone-2: TypeScript-like toy language environment
 
 ### Long-Term Goals
 

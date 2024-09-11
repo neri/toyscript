@@ -24,4 +24,9 @@ impl Module {
     pub fn add_function(&mut self, function: Function) {
         self.functions.push(function);
     }
+
+    #[inline]
+    pub fn functions(&self) -> &[Function] {
+        &self.functions
+    }
 }

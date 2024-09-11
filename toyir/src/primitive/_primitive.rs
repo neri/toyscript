@@ -2,8 +2,6 @@
 
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
-use toyassembly::types::ValType;
-
 /// ToyScript Primitive Types
 #[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -170,22 +168,6 @@ impl Primitive {
         }
     }
 
-    pub const fn wasm_binding(&self) -> Option<ValType> {
-        match self {
-            Self::Bool => Some(ValType::I32),
-            Self::F32 => Some(ValType::F32),
-            Self::F64 => Some(ValType::F64),
-            Self::I16 => Some(ValType::I32),
-            Self::I32 => Some(ValType::I32),
-            Self::I64 => Some(ValType::I64),
-            Self::I8 => Some(ValType::I32),
-            Self::U16 => Some(ValType::I32),
-            Self::U32 => Some(ValType::I32),
-            Self::U64 => Some(ValType::I64),
-            Self::U8 => Some(ValType::I32),
-            _ => None
-        }
-    }
 }
 
 impl core::fmt::Display for Primitive {

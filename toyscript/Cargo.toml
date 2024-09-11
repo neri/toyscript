@@ -15,4 +15,4 @@ std = ["alloc"]
 token = { path = "../lib/token" }
 toyir = { path = "../toyir" }
 leb128 = { path = "../lib/leb128" }
-# toyassembly = { path = "../toyassembly" }
+toyassembly = { path = "../toyassembly" }

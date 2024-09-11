@@ -32,7 +32,7 @@ impl Memory {
 impl ModuleName for Memory {
     const IDENTIFIER: Keyword = Keyword::Memory;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let id = Identifier::try_expect(tokens)?;
 
         let min = NumericLiteral::<u32>::expect(tokens)?;
@@ -60,7 +60,7 @@ impl MemUse {
 impl ModuleName for MemUse {
     const IDENTIFIER: Keyword = Keyword::Memory;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = NumericLiteral::<u32>::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;

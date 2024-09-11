@@ -20,7 +20,7 @@ pub enum Statement {
     Block(Block),
 
     /// `function`
-    Function(FunctionDeclaration),
+    Function(Box<FunctionDeclaration>),
 
     /// Variable Declaration
     Variable(VariableDeclaration),
@@ -29,16 +29,16 @@ pub enum Statement {
     TypeAlias(Identifier, TypeDescriptor),
 
     /// Class Declaration
-    Class(ClassDeclaration),
+    Class(Box<ClassDeclaration>),
 
     /// Enum Declaration
-    Enum(EnumDeclaration),
+    Enum(Box<EnumDeclaration>),
 
-    /// `if` expr `{` block `}` [[`else` `if` `{` block `}`]... `else` `{` block `}`]
-    IfStatement(Vec<IfType>),
+    /// `if` expr `{` block `}` `else` `if` expr `{` block `}` `else` `{` block `}`
+    IfStatement(Box<[IfType]>),
 
     /// `for` `(` expr `;` expr `;` expr `)` `{` block `}`
-    ForStatement(Expression, Expression, Expression, Block),
+    ForStatement(Box<[Expression; 3]>, Block),
 
     /// `while` expr `{` block `}`
     WhileStatement(Expression, Block),
@@ -84,7 +84,7 @@ impl Statement {
                         Keyword::Function => {
                             let func_decl =
                                 FunctionDeclaration::parse(modifiers.as_slice(), token, tokens)?;
-                            return Ok(Self::Function(func_decl));
+                            return Ok(Self::Function(Box::new(func_decl)));
                         }
                         Keyword::Const | Keyword::Let | Keyword::Var => {
                             let var_decl =
@@ -94,12 +94,12 @@ impl Statement {
                         Keyword::Class => {
                             let class_decl =
                                 ClassDeclaration::parse(modifiers.as_slice(), token, tokens)?;
-                            return Ok(Self::Class(class_decl));
+                            return Ok(Self::Class(Box::new(class_decl)));
                         }
                         Keyword::Enum => {
                             let enum_decl =
                                 EnumDeclaration::parse(modifiers.as_slice(), token, tokens)?;
-                            return Ok(Self::Enum(enum_decl));
+                            return Ok(Self::Enum(Box::new(enum_decl)));
                         }
                         Keyword::For => {
                             if !modifiers.is_empty() {
@@ -116,7 +116,7 @@ impl Statement {
 
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
-                            return Ok(Self::ForStatement(init, cond, step, block));
+                            return Ok(Self::ForStatement(Box::new([init, cond, step]), block));
                         }
 
                         Keyword::Declare => {
@@ -187,7 +187,7 @@ impl Statement {
                                     statements.push(IfType::Else(block));
                                 }
                             }
-                            return Ok(Self::IfStatement(statements));
+                            return Ok(Self::IfStatement(statements.into_boxed_slice()));
                         }
                         Keyword::While => {
                             if !modifiers.is_empty() {

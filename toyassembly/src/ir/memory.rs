@@ -16,7 +16,7 @@ impl Memories {
     pub(super) fn convert(
         module: &mut Module,
         memories: Vec<ast::memory::Memory>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         for ast_memory in memories {
             if let Some(id) = ast_memory.id() {
                 let memidx = MemoryIndex(module.memories.0.len() as u32);

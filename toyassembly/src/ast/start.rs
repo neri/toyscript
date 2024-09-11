@@ -10,7 +10,7 @@ pub struct Start(pub IndexToken);
 impl ModuleName for Start {
     const IDENTIFIER: Keyword = Keyword::Start;
 
-    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         let index = IndexToken::expect(tokens)?;
 
         expect(tokens, &[TokenType::CloseParenthesis])?;

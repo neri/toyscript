@@ -21,18 +21,18 @@ impl StringLiteral {
         self.position
     }
 
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         Self::_expect(tokens, false).map(|v| v.unwrap())
     }
 
-    pub fn try_expect(tokens: &mut TokenStream<Keyword>) -> Result<Option<Self>, ParseError> {
+    pub fn try_expect(tokens: &mut TokenStream<Keyword>) -> Result<Option<Self>, AssembleError> {
         Self::_expect(tokens, true)
     }
 
     fn _expect(
         tokens: &mut TokenStream<Keyword>,
         is_opt: bool,
-    ) -> Result<Option<Self>, ParseError> {
+    ) -> Result<Option<Self>, AssembleError> {
         let token = match expect(tokens, &[TokenType::DOUBLE_QUOTED_STRING_LITERAL]) {
             Ok(v) => v,
             Err(e) => {
@@ -45,13 +45,20 @@ impl StringLiteral {
         };
         let value = match token.string_literal() {
             Ok(v) => v.0.to_string(),
-            Err(err) => return Err(ParseError::invalid_string_literal(err, token.position())),
+            Err(err) => return Err(AssembleError::invalid_string_literal(err, token.position())),
         };
 
         Ok(Some(Self {
             value,
             position: token.position(),
         }))
+    }
+}
+
+impl ToString for StringLiteral {
+    #[inline]
+    fn to_string(&self) -> String {
+        self.get().to_owned()
     }
 }
 
@@ -77,18 +84,18 @@ impl RawBytesLiteral {
         self.position
     }
 
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, ParseError> {
+    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, AssembleError> {
         Self::_expect(tokens, false).map(|v| v.unwrap())
     }
 
-    pub fn try_expect(tokens: &mut TokenStream<Keyword>) -> Result<Option<Self>, ParseError> {
+    pub fn try_expect(tokens: &mut TokenStream<Keyword>) -> Result<Option<Self>, AssembleError> {
         Self::_expect(tokens, true)
     }
 
     fn _expect(
         tokens: &mut TokenStream<Keyword>,
         is_opt: bool,
-    ) -> Result<Option<Self>, ParseError> {
+    ) -> Result<Option<Self>, AssembleError> {
         let token = match expect(tokens, &[TokenType::DOUBLE_QUOTED_STRING_LITERAL]) {
             Ok(v) => v,
             Err(e) => {
@@ -101,7 +108,7 @@ impl RawBytesLiteral {
         };
         let value = match token.raw_bytes_literal(true) {
             Ok(v) => v.0,
-            Err(err) => return Err(ParseError::invalid_string_literal(err, token.position())),
+            Err(err) => return Err(AssembleError::invalid_string_literal(err, token.position())),
         };
 
         Ok(Some(Self {
@@ -121,13 +128,13 @@ pub struct NumericRawLiteral {
 }
 
 impl NumericRawLiteral {
-    pub fn from_token<KEYWORD>(token: &Token<KEYWORD>) -> Result<Self, ParseError>
+    pub fn from_token<KEYWORD>(token: &Token<KEYWORD>) -> Result<Self, AssembleError>
     where
         KEYWORD: core::fmt::Debug + core::fmt::Display,
     {
         match token.token_type() {
             TokenType::NumericLiteral | TokenType::Uncategorized => {
-                let radix = token.radix().ok_or(ParseError::invalid_number(
+                let radix = token.radix().ok_or(AssembleError::invalid_number(
                     token.source(),
                     token.position().into(),
                 ))?;
@@ -147,7 +154,7 @@ impl NumericRawLiteral {
                 })
             }
 
-            _ => Err(ParseError::missing_token(
+            _ => Err(AssembleError::missing_token(
                 &[TokenType::NumericLiteral],
                 token,
             )),
@@ -157,7 +164,7 @@ impl NumericRawLiteral {
     fn _expect<TYPE, KEYWORD>(
         tokens: &mut TokenStream<KEYWORD>,
         is_opt: bool,
-    ) -> Result<Option<Self>, ParseError>
+    ) -> Result<Option<Self>, AssembleError>
     where
         TYPE: IsSigned,
         KEYWORD: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
@@ -187,7 +194,7 @@ impl NumericRawLiteral {
             TokenType::Symbol('+') => match tokens.next_immed() {
                 Some(token) => Self::from_token(&token).map(|v| Some(v)),
                 None => {
-                    return Err(ParseError::missing_token(
+                    return Err(AssembleError::missing_token(
                         &[TokenType::NumericLiteral],
                         &tokens.next().unwrap(),
                     ))
@@ -202,7 +209,7 @@ impl NumericRawLiteral {
                     Self::from_token(&token.as_token::<KEYWORD>()).map(|v| Some(v))
                 }
                 None => {
-                    return Err(ParseError::missing_token(
+                    return Err(AssembleError::missing_token(
                         &[TokenType::NumericLiteral],
                         &tokens.next().unwrap(),
                     ))
@@ -328,7 +335,7 @@ pub struct NumericLiteral<TYPE: IsSigned> {
 
 #[allow(private_bounds)]
 impl<TYPE: IsSigned + Copy> NumericLiteral<TYPE> {
-    pub fn expect<KEYWORD>(tokens: &mut TokenStream<KEYWORD>) -> Result<Self, ParseError>
+    pub fn expect<KEYWORD>(tokens: &mut TokenStream<KEYWORD>) -> Result<Self, AssembleError>
     where
         NumericRawLiteral: Eval<TYPE, ()>,
         KEYWORD: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
@@ -338,7 +345,7 @@ impl<TYPE: IsSigned + Copy> NumericLiteral<TYPE> {
 
     pub fn try_expect<KEYWORD>(
         tokens: &mut TokenStream<KEYWORD>,
-    ) -> Result<Option<Self>, ParseError>
+    ) -> Result<Option<Self>, AssembleError>
     where
         NumericRawLiteral: Eval<TYPE, ()>,
         KEYWORD: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
@@ -346,7 +353,7 @@ impl<TYPE: IsSigned + Copy> NumericLiteral<TYPE> {
         Self::_expect(tokens, true)
     }
 
-    pub fn from_token<KEYWORD>(token: &Token<KEYWORD>) -> Result<Self, ParseError>
+    pub fn from_token<KEYWORD>(token: &Token<KEYWORD>) -> Result<Self, AssembleError>
     where
         NumericRawLiteral: Eval<TYPE, ()>,
         KEYWORD: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
@@ -354,14 +361,14 @@ impl<TYPE: IsSigned + Copy> NumericLiteral<TYPE> {
         let token = NumericRawLiteral::from_token(token)?;
         let position = token.position;
         let value = Eval::<TYPE, ()>::eval(&token)
-            .map_err(|_| ParseError::invalid_number(&token.source, position.into()))?;
+            .map_err(|_| AssembleError::invalid_number(&token.source, position.into()))?;
         Ok(Self { value, position })
     }
 
     fn _expect<KEYWORD>(
         tokens: &mut TokenStream<KEYWORD>,
         is_opt: bool,
-    ) -> Result<Option<Self>, ParseError>
+    ) -> Result<Option<Self>, AssembleError>
     where
         NumericRawLiteral: Eval<TYPE, ()>,
         KEYWORD: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
@@ -376,7 +383,7 @@ impl<TYPE: IsSigned + Copy> NumericLiteral<TYPE> {
 
         let position = token.position;
         let value = Eval::<TYPE, ()>::eval(&token)
-            .map_err(|_| ParseError::invalid_number(&token.source, position.into()))?;
+            .map_err(|_| AssembleError::invalid_number(&token.source, position.into()))?;
         Ok(Some(Self { value, position }))
     }
 

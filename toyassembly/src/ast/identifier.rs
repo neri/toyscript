@@ -12,21 +12,25 @@ pub struct Identifier {
 }
 
 impl Identifier {
-    pub fn from_token<T>(token: &Token<T>) -> Result<Self, ParseError> {
-        if ValType::from_str(token.source()).is_none() && token.source().starts_with("$") {
-            Ok(Self {
-                name: token.source().to_owned(),
-                position: token.position(),
-            })
-        } else {
-            Err(ParseError::invalid_identifier(
+    pub fn from_token<T>(token: &Token<T>) -> Result<Self, AssembleError> {
+        (ValType::from_str(token.source()).is_none())
+            .then(|| Self::from_str(token.source(), token.position()))
+            .flatten()
+            .ok_or(AssembleError::invalid_identifier(
                 token.source(),
                 token.position().into(),
             ))
-        }
     }
 
-    pub fn try_expect<T>(tokens: &mut TokenStream<T>) -> Result<Option<Self>, ParseError>
+    #[inline]
+    pub fn from_str(s: &str, position: TokenPosition) -> Option<Self> {
+        (s.starts_with("$")).then(|| Self {
+            name: s.to_owned(),
+            position,
+        })
+    }
+
+    pub fn try_expect<T>(tokens: &mut TokenStream<T>) -> Result<Option<Self>, AssembleError>
     where
         T: Copy + PartialEq + core::fmt::Debug + core::fmt::Display,
     {
@@ -45,9 +49,9 @@ impl Identifier {
                             if next.token_type().is_ignorable()
                                 || expected.contains(next.token_type())
                             {
-                                ControlFlow::<Result<(), ParseError>, Infallible>::Break(Ok(()))
+                                ControlFlow::<Result<(), AssembleError>, Infallible>::Break(Ok(()))
                             } else {
-                                ControlFlow::Break(Err(ParseError::missing_token(&expected, &next)))
+                                ControlFlow::Break(Err(AssembleError::missing_token(&expected, &next)))
                             }
                         })
                         .unwrap_err()
@@ -87,7 +91,7 @@ pub enum IndexToken {
 }
 
 impl IndexToken {
-    pub fn try_expect<T>(tokens: &mut TokenStream<T>) -> Result<Option<Self>, ParseError>
+    pub fn try_expect<T>(tokens: &mut TokenStream<T>) -> Result<Option<Self>, AssembleError>
     where
         T: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
     {
@@ -100,7 +104,7 @@ impl IndexToken {
         }
     }
 
-    pub fn expect<T>(tokens: &mut TokenStream<T>) -> Result<Self, ParseError>
+    pub fn expect<T>(tokens: &mut TokenStream<T>) -> Result<Self, AssembleError>
     where
         T: PartialEq + Copy + core::fmt::Debug + core::fmt::Display,
     {

@@ -15,7 +15,7 @@ impl DataSegments {
     pub(super) fn convert(
         module: &mut Module,
         data_segments: Vec<ast::data::Data>,
-    ) -> Result<(), ParseError> {
+    ) -> Result<(), AssembleError> {
         for data in data_segments {
             let ast::data::Data {
                 mem_use: _,

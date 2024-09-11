@@ -115,7 +115,7 @@ impl TypeSystem {
             let mut waiting_list2 = Vec::new();
             for item in waiting_type_list.iter().rev() {
                 let (identifier, type_desc) = item;
-                if !will_waiting_ids.contains(type_desc.as_string()) {
+                if !will_waiting_ids.contains(&type_desc.as_string()) {
                     return Err(CompileError::identifier_not_found(&type_desc.identifier()));
                 }
                 match system.make_alias(identifier, type_desc) {
@@ -667,7 +667,7 @@ impl InferredType {
     }
 
     #[inline]
-    pub fn pessimistic_type(&self) -> Option<&Arc<TypeDescriptor>> {
+    pub fn strict_type(&self) -> Option<&Arc<TypeDescriptor>> {
         match self {
             InferredType::Inferred(v) => Some(v),
             InferredType::Maybe(_) => None,
