@@ -295,10 +295,7 @@ impl TypeDescriptor {
             TokenType::Identifier => Identifier::parse(token, tokens).map(|v| Self::Simple(v)),
             TokenType::Keyword(keyword) => {
                 if keyword.is_type_identifier() {
-                    Ok(Self::Simple(Identifier::from_keyword(
-                        *keyword,
-                        token.position(),
-                    )))
+                    Ok(Self::Simple(Identifier::from_token(&token)))
                 } else {
                     Err(CompileError::with_token(
                         CompileErrorKind::SyntaxError,

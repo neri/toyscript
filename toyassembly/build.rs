@@ -3,12 +3,13 @@ use std::{
     fs::{read_to_string, File},
     io::*,
 };
+use toyir;
 
 fn main() {
     {
         make_enum(
-            "./src/types/valtype.txt",
-            "./src/types/_valtype.rs",
+            "./src/misc/valtype.txt",
+            "./src/_generated/valtype.rs",
             "ValType",
             "ToyAssembly Value Types",
             &[],
@@ -17,18 +18,18 @@ fn main() {
 
     {
         let mut lines = Vec::new();
-        for line in read_to_string("./src/wasm/opcode.csv").unwrap().lines() {
+        for line in read_to_string("./src/misc/opcode.csv").unwrap().lines() {
             if !line.is_empty() && !line.starts_with("#") {
                 lines.push(line.to_string());
             }
         }
-        let mut os = File::create("./src/wasm/opcode.rs").unwrap();
+        let mut os = File::create("./src/_generated/opcode.rs").unwrap();
         let opcodes = make_opcode(&mut os, lines.as_slice());
         println!("cargo:rerun-if-changed=./src/wasm/opcode.csv");
 
         make_enum(
-            "./src/keyword/keyword.txt",
-            "./src/keyword/_keyword.rs",
+            "./src/misc/keyword.txt",
+            "./src/_generated/keyword.rs",
             "Keyword",
             "ToyAssembly Reserved Keywords",
             &opcodes,
@@ -540,6 +541,73 @@ impl WasmOpcode {{
     write!(
         os,
         "            _ => None
+        }}
+    }}"
+    )
+    .unwrap();
+
+    for val_type in &["i32", "i64", "f32", "f64"] {
+        write!(
+            os,
+            "
+
+    pub fn from_top_{}(top: toyir::Op) -> Option<Self> {{
+        match top {{
+",
+            val_type
+        )
+        .unwrap();
+
+        for tir in toyir::Op::all_values() {
+            if !matches!(
+                tir.class(),
+                toyir::OpClass::BinOp | toyir::OpClass::Cmp | toyir::OpClass::UnOp
+            ) {
+                continue;
+            }
+
+            let tir_str = tir.as_str();
+            let mnemonic = to_camel_case_identifier(&format!("{}.{}", val_type, tir_str));
+            let target = if let Some(target) = opcodes.get(&mnemonic) {
+                Some(target)
+            } else if tir_str.ends_with("_s") {
+                let tir_str = &tir_str[..tir_str.len() - 2];
+                let mnemonic2 = to_camel_case_identifier(&format!("{}.{}", val_type, tir_str));
+                opcodes.get(&mnemonic2)
+            } else {
+                None
+            };
+
+            if let Some(target) = target {
+                writeln!(
+                    os,
+                    "            toyir::Op::{} => Some(Self::{}),",
+                    tir.to_identifier(),
+                    target.identifier,
+                )
+                .unwrap();
+            }
+        }
+
+        write!(
+            os,
+            "            _ => None
+        }}
+    }}"
+        )
+        .unwrap();
+    }
+
+    write!(
+        os,
+        "
+
+    pub fn from_top(top: toyir::Op, val_type: ValType) -> Option<Self> {{
+        match val_type {{
+            ValType::I32 => Self::from_top_i32(top),
+            ValType::I64 => Self::from_top_i64(top),
+            ValType::F32 => Self::from_top_f32(top),
+            ValType::F64 => Self::from_top_f64(top),
         }}
     }}
 

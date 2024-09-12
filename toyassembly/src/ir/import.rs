@@ -50,6 +50,38 @@ impl Imports {
         Ok(())
     }
 
+    pub(super) fn process_tir(
+        module: &mut Module,
+        imports: &[toyir::Import],
+    ) -> Result<(), AssembleError> {
+        for tir_import in imports {
+            match tir_import.import_desc() {
+                toyir::ImportDescriptor::Function(import_func) => {
+                    let type_use = ir::Type::from_iter(
+                        import_func
+                            .params()
+                            .iter()
+                            .map(|v| v.wasm_binding().unwrap()),
+                        import_func
+                            .results()
+                            .iter()
+                            .map(|v| v.wasm_binding().unwrap()),
+                    );
+                    let typeidx = module.types.define(type_use)?;
+
+                    module.import_funcs.push(typeidx);
+                    module.imports.0.push(Import {
+                        mod_name: tir_import.from().to_owned(),
+                        name: tir_import.name().to_owned(),
+                        desc: ImportDesc::Func(typeidx),
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn write_to_wasm(&self, writer: &mut Leb128Writer) -> Result<WasmSectionId, WriteError> {
         if self.0.len() > 0 {
             writer.write(self.0.len())?;
@@ -97,6 +129,7 @@ impl Imports {
             )?;
         }
 
+        module.import_funcs.push(typeidx);
         module.imports.0.push(Import {
             mod_name,
             name,

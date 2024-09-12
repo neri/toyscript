@@ -42,7 +42,7 @@ pub struct FuncCode {
     results: Vec<ValType>,
     locals: Vec<ValType>,
     local_ids: BTreeMap<String, LocalIndex>,
-    local_and_params: Vec<ValType>,
+    params_and_locals: Vec<ValType>,
     content: Code,
 }
 
@@ -52,14 +52,14 @@ impl FuncCode {
         results: Vec<ValType>,
         locals: Vec<ValType>,
         local_ids: BTreeMap<String, LocalIndex>,
-        local_and_params: Vec<ValType>,
+        params_and_locals: Vec<ValType>,
         content: Code,
     ) -> Self {
         Self {
             results,
             locals,
             local_ids,
-            local_and_params,
+            params_and_locals,
             content,
         }
     }
@@ -71,7 +71,7 @@ impl FuncCode {
             &self.results,
             &self.locals,
             &self.local_ids,
-            &self.local_and_params,
+            &self.params_and_locals,
         )
     }
 
@@ -87,7 +87,7 @@ impl core::fmt::Debug for FuncCode {
             .field("results", &self.results)
             // .field("locals", &self.locals)
             // .field("local_ids", &self.local_ids)
-            .field("local_and_params", &self.local_and_params)
+            .field("params_and_locals", &self.params_and_locals)
             .field("content", &self.content)
             .finish()
     }

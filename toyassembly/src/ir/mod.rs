@@ -5,7 +5,7 @@ use code::Codes;
 use data::DataSegments;
 use elem::Elems;
 use export::Exports;
-use func::Functions;
+use func::{Func, Functions};
 use global::Globals;
 use import::{Import, Imports};
 use index::{FuncIndex, GlobalIndex, TypeIndex};
@@ -13,6 +13,7 @@ use leb128::{Leb128Writer, WriteError, WriteLeb128};
 use memory::Memories;
 use table::Tables;
 use types::{IdType, Type, Types};
+use wasm::section_id::WasmSectionId;
 
 pub mod code;
 pub mod data;
@@ -26,10 +27,11 @@ pub mod memory;
 pub mod table;
 pub mod types;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Module {
     pub(self) types: Types,
     pub(self) imports: Imports,
+    pub(self) import_funcs: Vec<TypeIndex>,
     pub(self) funcs: Functions,
     pub(self) tables: Tables,
     pub(self) memories: Memories,
@@ -100,7 +102,9 @@ impl Module {
             ..Default::default()
         };
 
+        Imports::process_tir(&mut module, tir_module.imports())?;
         Functions::process_tir(&mut module, tir_module.functions())?;
+        Memories::process_tir(&mut module)?;
 
         module.assemble()?;
 
@@ -196,6 +200,17 @@ impl Module {
     #[inline]
     pub fn get_type(&self, index: TypeIndex) -> &Type {
         &self.types.0[index.as_usize()]
+    }
+
+    #[inline]
+    pub fn get_func_by_index(&self, index: u32) -> Option<Func> {
+        let index = index as usize;
+        let base = self.import_funcs.len();
+        if index < base {
+            self.import_funcs.get(index).map(|v| Func(*v))
+        } else {
+            self.funcs.0.get(index - base).map(|v| *v)
+        }
     }
 
     #[inline]
@@ -352,19 +367,48 @@ impl Module {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WasmSectionId {
-    Custom,
-    Type,
-    Import,
-    Function,
-    Table,
-    Memory,
-    Global,
-    Export,
-    Start,
-    Element,
-    Code,
-    Data,
-    DataCount,
+impl core::fmt::Debug for Module {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut d = f.debug_struct("Module");
+        let mut d = &mut d;
+
+        if self.types.0.len() > 0 {
+            d = d.field("types", &self.types);
+        }
+        if self.imports.0.len() > 0 {
+            d = d.field("imports", &self.imports);
+        }
+        if self.funcs.0.len() > 0 {
+            d = d.field("funcs", &self.funcs);
+        }
+        if self.tables.0.len() > 0 {
+            d = d.field("tables", &self.tables);
+        }
+        if self.memories.0.len() > 0 {
+            d = d.field("memories", &self.memories);
+        }
+        if self.globals.0.len() > 0 {
+            d = d.field("globals", &self.globals);
+        }
+        if self.exports.0.len() > 0 {
+            d = d.field("exports", &self.exports);
+        }
+        if let Some(start) = self.start {
+            d = d.field("start", &start);
+        }
+        if self.elems.0.len() > 0 {
+            d = d.field("elems", &self.elems);
+        }
+        if self.codes.0.len() > 0 {
+            d = d.field("codes", &self.codes);
+        }
+        if self.data_segs.0.len() > 0 {
+            d = d.field("data_segs", &self.data_segs);
+        }
+        if self.names.len() > 0 {
+            d = d.field("names", &self.names);
+        }
+
+        d.finish()
+    }
 }

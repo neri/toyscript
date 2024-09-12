@@ -1,5 +1,6 @@
 //! TotAssembly Types
 
+#[path = "../_generated/valtype.rs"]
 mod _valtype;
 pub use _valtype::*;
 

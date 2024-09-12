@@ -3,6 +3,7 @@ use super::*;
 #[derive(Debug)]
 pub struct Module {
     name: String,
+    imports: Vec<Import>,
     functions: Vec<Function>,
 }
 
@@ -11,6 +12,7 @@ impl Module {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_owned(),
+            imports: Vec::new(),
             functions: Vec::new(),
         }
     }
@@ -26,7 +28,17 @@ impl Module {
     }
 
     #[inline]
+    pub fn add_import(&mut self, import: Import) {
+        self.imports.push(import);
+    }
+
+    #[inline]
     pub fn functions(&self) -> &[Function] {
         &self.functions
+    }
+
+    #[inline]
+    pub fn imports(&self) -> &[Import] {
+        &self.imports
     }
 }

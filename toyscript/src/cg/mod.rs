@@ -12,7 +12,7 @@ use ast::{
 use keyword::ModifierFlag;
 use scope::{Scope, VariableDescriptor, VariableStorage};
 use token::TokenPosition;
-use toyir::{self, Primitive};
+use toyir::{self, Import, Primitive};
 use types::{InferredType, Resolve, TypeDescriptor};
 
 pub struct CodeGen;
@@ -32,8 +32,36 @@ impl CodeGen {
                             func_decl.identifier().id_position().into(),
                         ),
                     )?;
-                    if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
-                        continue;
+                    if let Some(import_from) = func_decl.import_from() {
+                        let mut params = Vec::new();
+                        for param in func_desc.param_types() {
+                            let primitive_type =
+                                param.primitive_type().ok_or(CompileError::invalid_type(
+                                    &Identifier::new(param.identifier(), TokenPosition((0, 0))),
+                                ))?;
+                            params.push(primitive_type);
+                        }
+
+                        let mut results = Vec::new();
+                        let result_type = func_desc.result_type();
+                        if !result_type.is_special() {
+                            let primitive_type =
+                                result_type
+                                    .primitive_type()
+                                    .ok_or(CompileError::invalid_type(&Identifier::new(
+                                        result_type.identifier(),
+                                        TokenPosition((0, 0)),
+                                    )))?;
+                            results.push(primitive_type);
+                        }
+
+                        module.add_import(Import::func(
+                            func_desc.signature(),
+                            &func_desc.identifier().as_string(),
+                            import_from,
+                            &params,
+                            &results,
+                        ));
                     } else {
                         let function = Self::generate_function(func_decl, func_desc, types)?;
                         module.add_function(function);
@@ -661,8 +689,13 @@ impl CodeGen {
 
                 UnaryOperator::Minus => asm.ir_neg(|asm| {
                     let result_type = Self::generate_unary(asm, value, scope)?;
-                    let type2 = result_type.optimistic_type().unwrap();
-                    let type2 = scope.types().resolve_primitive(type2).unwrap();
+                    let type2 = result_type
+                        .optimistic_type()
+                        .ok_or(CompileError::could_not_infer2(item.position()))?;
+                    let type2 = scope
+                        .types()
+                        .resolve_primitive(type2)
+                        .ok_or(CompileError::could_not_infer2(item.position()))?;
                     Ok((type2, result_type))
                 }),
 

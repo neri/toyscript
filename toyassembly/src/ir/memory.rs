@@ -33,6 +33,13 @@ impl Memories {
         Ok(())
     }
 
+    pub(super) fn process_tir(module: &mut Module) -> Result<(), AssembleError> {
+        // default memory
+        module.memories.0.push(Memory { min: 1, max: None });
+
+        Ok(())
+    }
+
     pub fn write_to_wasm(&self, writer: &mut Leb128Writer) -> Result<WasmSectionId, WriteError> {
         if self.0.len() > 0 {
             writer.write(self.0.len())?;

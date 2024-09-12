@@ -189,5 +189,5 @@ impl core::fmt::Debug for Functions {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Func(pub TypeIndex);

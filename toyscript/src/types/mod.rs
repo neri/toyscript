@@ -338,17 +338,17 @@ impl TypeSystem {
     #[inline]
     pub fn mangled<'a, T>(
         identifier: &str,
-        param_types: T,
-        result_type: &Arc<TypeDescriptor>,
+        _param_types: T,
+        _result_type: &Arc<TypeDescriptor>,
     ) -> String
     where
         T: Iterator<Item = &'a TypeDescriptor>,
     {
         format!(
-            "${}@{}:{}",
+            "${}",
             identifier,
-            param_types.map(|v| v.mangled()).collect::<String>(),
-            result_type.mangled(),
+            // param_types.map(|v| v.mangled()).collect::<String>(),
+            // result_type.mangled(),
         )
     }
 

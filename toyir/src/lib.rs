@@ -1,17 +1,19 @@
 //! ToyIR: ToyScript Intermediate Representation
 #![cfg_attr(not(test), no_std)]
 
-#[path = "opcode/_irop.rs"]
+#[path = "./_generated/irop.rs"]
 mod _irop;
 pub use _irop::*;
 
-#[path = "primitive/_primitive.rs"]
+#[path = "./_generated/primitive.rs"]
 mod _primitive;
 pub use _primitive::*;
 
 mod function;
+mod import;
 mod module;
 pub use function::*;
+pub use import::*;
 pub use module::*;
 
 pub mod error;

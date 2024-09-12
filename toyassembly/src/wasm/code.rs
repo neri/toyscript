@@ -102,7 +102,7 @@ impl Code {
         results: &[ValType],
         locals: &[ValType],
         local_ids: &BTreeMap<String, LocalIndex>,
-        local_and_params: &[ValType],
+        params_and_locals: &[ValType],
     ) -> Result<(), AssembleError> {
         match self {
             Code::Binary(_) => Ok(()),
@@ -112,11 +112,11 @@ impl Code {
                 results,
                 locals,
                 local_ids,
-                local_and_params,
+                params_and_locals,
             )
             .map(|bytes| *self = Code::Binary(Binary { bytes })),
             Code::ToyIr(tir) => {
-                code_tir::TirToWasm::assemble(&tir.0, module, results, locals, local_and_params)
+                code_tir::TirToWasm::assemble(&tir.0, module, results, locals, params_and_locals)
                     .map(|bytes| *self = Code::Binary(Binary { bytes }))
             }
         }
@@ -129,7 +129,7 @@ impl Code {
         results: &[ValType],
         locals: &[ValType],
         local_ids: &BTreeMap<String, LocalIndex>,
-        local_and_params: &[ValType],
+        params_and_locals: &[ValType],
     ) -> Result<Vec<u8>, AssembleError> {
         let _ = results;
         let mut writer = Leb128Writer::new();
@@ -314,7 +314,7 @@ impl Code {
                             let index = num.get();
                             AssembleError::check_index(
                                 index,
-                                0..(local_and_params.len() as u32),
+                                0..(params_and_locals.len() as u32),
                                 num.position().into(),
                             )?;
                             index

@@ -7,8 +7,8 @@ use std::{
 fn main() {
     {
         make_primitive(
-            "./src/primitive/primitive.csv",
-            "./src/primitive/_primitive.rs",
+            "./src/misc/primitive.csv",
+            "./src/_generated/primitive.rs",
             "Primitive",
             "ToyScript Primitive Types",
         );
@@ -16,8 +16,8 @@ fn main() {
 
     {
         make_irop(
-            "./src/opcode/irop.csv",
-            "./src/opcode/_irop.rs",
+            "./src/misc/irop.csv",
+            "./src/_generated/irop.rs",
             "Op",
             "ToyScript Intermediate Representation Opcodes",
         );
@@ -318,15 +318,28 @@ impl core::fmt::Debug for {class_name} {{
 }
 
 fn make_irop(src_path: &str, dest_path: &str, class_name: &str, comment: &str) {
+    let kind_class_name = format!("{class_name}Class");
+
+    let mut keyword_kind = BTreeMap::new();
     let mut keywords = Vec::new();
+    let mut kinds = Vec::new();
     for line in read_to_string(src_path).unwrap().lines().skip(1) {
         let mut cols = line.split(",");
         let keyword = cols.next().unwrap().to_owned();
-        if !keyword.is_empty() && !keyword.starts_with("#") {
-            if keywords.contains(&keyword) {
-                panic!("redefined keyword: {keyword}");
-            }
-            keywords.push(keyword);
+        if keyword.is_empty() || keyword.starts_with("#") {
+            continue;
+        }
+        let kind = cols.next().unwrap().to_owned();
+
+        if keywords.contains(&keyword) {
+            panic!("redefined keyword: {keyword}");
+        }
+
+        keyword_kind.insert(keyword.clone(), kind.clone());
+        keywords.push(keyword);
+
+        if !kinds.contains(&kind) {
+            kinds.push(kind);
         }
     }
     // keywords.sort();
@@ -417,6 +430,49 @@ impl {class_name} {{
         os,
         "        }}
     }}
+
+    pub fn to_identifier(&self) -> &str {{
+        match self {{
+"
+    )
+    .unwrap();
+
+    for keyword in keywords.iter() {
+        writeln!(
+            os,
+            "            Self::{} => {:?},",
+            to_camel_case_identifier(keyword),
+            to_camel_case_identifier(keyword),
+        )
+        .unwrap();
+    }
+
+    write!(
+        os,
+        "        }}
+    }}
+
+    pub fn class(&self) -> {kind_class_name} {{
+        match self {{
+"
+    )
+    .unwrap();
+
+    for keyword in keywords.iter() {
+        writeln!(
+            os,
+            "            Self::{} => {kind_class_name}::{},",
+            to_camel_case_identifier(&keyword),
+            to_camel_case_identifier(keyword_kind.get(keyword).unwrap()),
+        )
+        .unwrap();
+    }
+
+    write!(
+        os,
+        "        }}
+    }}
+
 }}
 
 impl core::fmt::Display for {class_name} {{
@@ -430,9 +486,19 @@ impl core::fmt::Debug for {class_name} {{
         write!(f, \"{{:?}}\", self.as_str())
     }}
 }}
+
+#[non_exhaustive]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum {kind_class_name} {{
 "
     )
     .unwrap();
+
+    for kind in &kinds {
+        writeln!(os, "    {},", to_camel_case_identifier(kind)).unwrap();
+    }
+
+    writeln!(os, "}}").unwrap();
 
     println!("cargo:rerun-if-changed={}", src_path);
 }

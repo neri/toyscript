@@ -1013,7 +1013,7 @@ impl<KEYWORD> Token<KEYWORD> {
     }
 
     #[inline]
-    pub fn source_arc(&self) -> &ArcStringSlice {
+    pub fn as_arc(&self) -> &ArcStringSlice {
         &self.str
     }
 
@@ -1073,7 +1073,7 @@ impl<KEYWORD> Token<KEYWORD> {
                         'b' | 'B' => Some((3, Radix::Bin)),
                         'o' | 'O' => Some((3, Radix::Oct)),
                         'x' | 'X' => Some((3, Radix::Hex)),
-                        '0'..='9' => Some((1, Radix::Dec)),
+                        '0'..='9' | '_' => Some((1, Radix::Dec)),
                         _ => None,
                     },
                     None => Some((1, Radix::Dec)),
@@ -1086,7 +1086,7 @@ impl<KEYWORD> Token<KEYWORD> {
                     'b' | 'B' => Some((2, Radix::Bin)),
                     'o' | 'O' => Some((2, Radix::Oct)),
                     'x' | 'X' => Some((2, Radix::Hex)),
-                    '0'..='9' => Some((0, Radix::Dec)),
+                    '0'..='9' | '_' => Some((0, Radix::Dec)),
                     _ => None,
                 },
                 None => Some((0, Radix::Dec)),
@@ -1094,6 +1094,30 @@ impl<KEYWORD> Token<KEYWORD> {
             '1'..='9' => Some((0, Radix::Dec)),
             _ => None,
         }
+    }
+
+    pub fn try_parse_integer(&self) -> Option<u64> {
+        let mut acc = 0u64;
+        let radix_info = self.radix()?;
+        let radix = radix_info.1.value() as u64;
+
+        for ch in self.source().bytes().skip(radix_info.0) {
+            if ch == b'_' {
+                continue;
+            }
+            let delta = match ch {
+                b'0'..=b'9' => (ch - b'0') as u64,
+                b'A'..=b'F' => (ch - b'A' + 10) as u64,
+                b'a'..=b'f' => (ch - b'a' + 10) as u64,
+                _ => return None,
+            };
+            if delta > radix {
+                return None;
+            }
+            acc = acc.checked_mul(radix)?.checked_add(delta)?;
+        }
+
+        Some(acc)
     }
 
     pub fn string_literal<'a>(&'a self) -> Result<(Cow<'a, str>, QuoteType), StringLiteralError> {

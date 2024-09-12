@@ -1,6 +1,5 @@
 //! Expressions
 
-// use super::integer::*;
 use super::Identifier;
 use crate::{keyword::Keyword, *};
 use ast::integer::Integer;
@@ -133,9 +132,9 @@ impl Expression {
                     items.push(FlatUnary::Value(Unary::Identifier(identifier)));
                 }
                 TokenType::NumericLiteral => {
-                    let v = Integer::from_str(token.source()).map_err(|_| {
-                        CompileError::invalid_literal("Invalid number", token.position())
-                    })?;
+                    let v = token.try_parse_integer().map(Integer::U64).ok_or(
+                        CompileError::invalid_literal("Invalid number", token.position()),
+                    )?;
                     items.push(FlatUnary::Value(Unary::NumericLiteral(v, token.position())));
                 }
                 TokenType::StringLiteral(_) => {

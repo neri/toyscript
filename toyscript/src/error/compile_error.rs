@@ -272,7 +272,7 @@ impl CompileError {
             identifier.as_str()
         );
         Self {
-            kind: CompileErrorKind::SyntaxError,
+            kind: CompileErrorKind::TypeError,
             explanation: Some(explanation),
             position: ErrorPosition::Range(identifier.id_position()),
         }
@@ -282,9 +282,19 @@ impl CompileError {
     pub fn could_not_infer(identifier: &Identifier) -> Self {
         let explanation = format!("Could not infer type of '{}'", identifier.as_str());
         Self {
-            kind: CompileErrorKind::SyntaxError,
+            kind: CompileErrorKind::TypeError,
             explanation: Some(explanation),
             position: ErrorPosition::Range(identifier.id_position()),
+        }
+    }
+
+    #[inline]
+    pub fn could_not_infer2(position: TokenPosition) -> Self {
+        let explanation = format!("Could not infer type");
+        Self {
+            kind: CompileErrorKind::TypeError,
+            explanation: Some(explanation),
+            position: ErrorPosition::Range(position),
         }
     }
 
@@ -299,7 +309,7 @@ impl CompileError {
             expected, actual
         );
         Self {
-            kind: CompileErrorKind::SyntaxError,
+            kind: CompileErrorKind::TypeError,
             explanation: Some(explanation),
             position: ErrorPosition::Range(position),
         }

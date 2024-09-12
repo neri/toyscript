@@ -1,7 +1,6 @@
-use token::ArcStringSlice;
-
 use super::*;
 use crate::*;
+use token::ArcStringSlice;
 
 #[derive(Clone)]
 pub struct Identifier {
@@ -12,7 +11,7 @@ impl Identifier {
     #[inline]
     pub fn from_token(token: &Token<Keyword>) -> Self {
         Self {
-            str: token.source_arc().clone(),
+            str: token.as_arc().clone(),
         }
     }
 

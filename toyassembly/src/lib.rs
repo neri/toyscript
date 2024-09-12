@@ -13,7 +13,7 @@ pub mod token;
 pub mod types;
 pub mod wasm;
 
-#[path = "keyword/_keyword.rs"]
+#[path = "_generated/keyword.rs"]
 pub mod keyword;
 
 #[allow(unused)]

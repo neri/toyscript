@@ -22,6 +22,7 @@ impl FunctionDescriptor {
         types: &TypeSystem,
         func_idx: FuncIndex,
     ) -> Result<Self, CompileError> {
+        let mut modifiers = decl.modifiers();
         let identifier = decl.identifier().clone();
 
         let mut param_types = Vec::new();
@@ -49,19 +50,21 @@ impl FunctionDescriptor {
             None => types.builtin_void(),
         };
 
-        let signature = if identifier.as_str() == MAIN_NAME {
-            identifier.to_string()
+        let signature;
+        if identifier.as_str() == MAIN_NAME {
+            signature = format!("${}", identifier.as_str());
+            modifiers.insert(ModifierFlag::EXPORT);
         } else {
-            TypeSystem::mangled(
+            signature = TypeSystem::mangled(
                 identifier.as_str(),
                 param_types.iter().map(|v| v.as_ref()),
                 &result_type,
-            )
-        };
+            );
+        }
 
         Ok(FunctionDescriptor {
             func_idx,
-            modifiers: decl.modifiers(),
+            modifiers,
             identifier,
             signature,
             param_types: param_types.into_boxed_slice(),

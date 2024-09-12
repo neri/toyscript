@@ -9,6 +9,7 @@ use token::{Token, TokenPosition, TokenStream};
 pub struct FunctionDeclaration {
     modifiers: ModifierFlag,
     identifier: Identifier,
+    import_from: Option<String>,
     type_params: Vec<TypeParameter>,
     parameters: Box<[Parameter]>,
     result_type: Option<TypeDescriptor>,
@@ -75,13 +76,30 @@ impl FunctionDeclaration {
             None
         };
 
-        let block = if modifiers.contains(ModifierFlag::IMPORT) {
+        let block;
+        let import_from;
+        if modifiers.contains(ModifierFlag::IMPORT) {
+            block = Block::empty();
+
+            expect(tokens, &[TokenType::Keyword(Keyword::From)])?;
+
+            let token = expect(
+                tokens,
+                &[TokenType::StringLiteral(token::QuoteType::DoubleQuote)],
+            )?;
+            let from = token.string_literal().map_err(|e| {
+                CompileError::invalid_literal(
+                    &format!("invalid string: {:?} {:?}", e, token),
+                    token.position().into(),
+                )
+            })?;
+            import_from = Some(from.0.to_string());
+
             expect_eol(tokens)?;
-            Block::empty()
         } else {
             let block_begin = expect_symbol(tokens, '{')?;
-            let block = Block::parse(block_begin, tokens)?;
-            block
+            block = Block::parse(block_begin, tokens)?;
+            import_from = None;
         };
 
         let position = start_token
@@ -91,6 +109,7 @@ impl FunctionDeclaration {
         Ok(FunctionDeclaration {
             modifiers,
             identifier,
+            import_from,
             type_params,
             parameters: parameters.into_boxed_slice(),
             result_type,
@@ -107,6 +126,11 @@ impl FunctionDeclaration {
     #[inline]
     pub fn identifier(&self) -> &Identifier {
         &self.identifier
+    }
+
+    #[inline]
+    pub fn import_from(&self) -> Option<&str> {
+        self.import_from.as_ref().map(|v| v.as_str())
     }
 
     #[inline]

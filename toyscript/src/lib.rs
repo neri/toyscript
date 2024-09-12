@@ -55,7 +55,7 @@ impl ToyScript {
             .map(|v| format!("{:#?}", v))
     }
 
-    pub fn explain_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+    pub fn explain_toyir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
 
@@ -68,7 +68,7 @@ impl ToyScript {
         .map(|v| format!("{:#?}", v))
     }
 
-    pub fn to_wasm(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+    pub fn explain_wasm_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         let ir_module = Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
             let types = TypeSystem::new(file_name, &ast)?;
@@ -79,6 +79,25 @@ impl ToyScript {
         toyassembly::ir::Module::from_toyir(ir_module)
             .map(|v| format!("{:#?}", v))
             .map_err(|err| format!("Internal Assembly Error: {:#?}", err))
+    }
+
+    pub fn to_wasm(file_name: &str, src: Vec<u8>) -> Result<Vec<u8>, String> {
+        let ir_module = Self::_from_src(file_name, src, |tokens| {
+            let ast = Ast::from_tokens(tokens)?;
+            let types = TypeSystem::new(file_name, &ast)?;
+            let ir_module = cg::CodeGen::generate(&ast, &types)?;
+            Ok(ir_module)
+        })?;
+
+        let module = match toyassembly::ir::Module::from_toyir(ir_module) {
+            Ok(v) => v,
+            Err(err) => return Err(format!("Internal Assembly Error: {:#?}", err)),
+        };
+
+        // Ok(format!("{:#?}", module).into_bytes())
+        module
+            .write_to_wasm()
+            .map_err(|e| format!("Internal Write Error: {:#?}", e))
     }
 }
 

@@ -274,6 +274,117 @@ impl Op {
             Self::Dec => "dec",
         }
     }
+
+    pub fn to_identifier(&self) -> &str {
+        match self {
+            Self::Unreachable => "Unreachable",
+            Self::Nop => "Nop",
+            Self::UnaryNop => "UnaryNop",
+            Self::Block => "Block",
+            Self::Loop => "Loop",
+            Self::End => "End",
+            Self::Br => "Br",
+            Self::BrIf => "BrIf",
+            Self::Return => "Return",
+            Self::Call => "Call",
+            Self::Drop => "Drop",
+            Self::I32Const => "I32Const",
+            Self::I64Const => "I64Const",
+            Self::F32Const => "F32Const",
+            Self::F64Const => "F64Const",
+            Self::LocalGet => "LocalGet",
+            Self::LocalSet => "LocalSet",
+            Self::LocalTee => "LocalTee",
+            Self::Eqz => "Eqz",
+            Self::Eq => "Eq",
+            Self::Ne => "Ne",
+            Self::LtS => "LtS",
+            Self::LtU => "LtU",
+            Self::GtS => "GtS",
+            Self::GtU => "GtU",
+            Self::LeS => "LeS",
+            Self::LeU => "LeU",
+            Self::GeS => "GeS",
+            Self::GeU => "GeU",
+            Self::Clz => "Clz",
+            Self::Ctz => "Ctz",
+            Self::Popcnt => "Popcnt",
+            Self::Add => "Add",
+            Self::Sub => "Sub",
+            Self::Mul => "Mul",
+            Self::DivS => "DivS",
+            Self::DivU => "DivU",
+            Self::RemS => "RemS",
+            Self::RemU => "RemU",
+            Self::Shl => "Shl",
+            Self::ShrS => "ShrS",
+            Self::ShrU => "ShrU",
+            Self::And => "And",
+            Self::Or => "Or",
+            Self::Xor => "Xor",
+            Self::Rotl => "Rotl",
+            Self::Rotr => "Rotr",
+            Self::Not => "Not",
+            Self::Inc => "Inc",
+            Self::Dec => "Dec",
+        }
+    }
+
+    pub fn class(&self) -> OpClass {
+        match self {
+            Self::Unreachable => OpClass::Control,
+            Self::Nop => OpClass::Control,
+            Self::UnaryNop => OpClass::Control,
+            Self::Block => OpClass::Block,
+            Self::Loop => OpClass::Block,
+            Self::End => OpClass::Block,
+            Self::Br => OpClass::Control,
+            Self::BrIf => OpClass::Control,
+            Self::Return => OpClass::Control,
+            Self::Call => OpClass::Control,
+            Self::Drop => OpClass::Control,
+            Self::I32Const => OpClass::Const,
+            Self::I64Const => OpClass::Const,
+            Self::F32Const => OpClass::Const,
+            Self::F64Const => OpClass::Const,
+            Self::LocalGet => OpClass::Local,
+            Self::LocalSet => OpClass::Local,
+            Self::LocalTee => OpClass::Local,
+            Self::Eqz => OpClass::UnOp,
+            Self::Eq => OpClass::Cmp,
+            Self::Ne => OpClass::Cmp,
+            Self::LtS => OpClass::Cmp,
+            Self::LtU => OpClass::Cmp,
+            Self::GtS => OpClass::Cmp,
+            Self::GtU => OpClass::Cmp,
+            Self::LeS => OpClass::Cmp,
+            Self::LeU => OpClass::Cmp,
+            Self::GeS => OpClass::Cmp,
+            Self::GeU => OpClass::Cmp,
+            Self::Clz => OpClass::UnOp,
+            Self::Ctz => OpClass::UnOp,
+            Self::Popcnt => OpClass::UnOp,
+            Self::Add => OpClass::BinOp,
+            Self::Sub => OpClass::BinOp,
+            Self::Mul => OpClass::BinOp,
+            Self::DivS => OpClass::BinOp,
+            Self::DivU => OpClass::BinOp,
+            Self::RemS => OpClass::BinOp,
+            Self::RemU => OpClass::BinOp,
+            Self::Shl => OpClass::BinOp,
+            Self::ShrS => OpClass::BinOp,
+            Self::ShrU => OpClass::BinOp,
+            Self::And => OpClass::BinOp,
+            Self::Or => OpClass::BinOp,
+            Self::Xor => OpClass::BinOp,
+            Self::Rotl => OpClass::BinOp,
+            Self::Rotr => OpClass::BinOp,
+            Self::Not => OpClass::UnOp,
+            Self::Inc => OpClass::UnOp,
+            Self::Dec => OpClass::UnOp,
+        }
+    }
+
 }
 
 impl core::fmt::Display for Op {
@@ -286,4 +397,16 @@ impl core::fmt::Debug for Op {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:?}", self.as_str())
     }
+}
+
+#[non_exhaustive]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OpClass {
+    Control,
+    Block,
+    Const,
+    Local,
+    UnOp,
+    Cmp,
+    BinOp,
 }

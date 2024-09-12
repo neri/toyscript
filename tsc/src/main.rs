@@ -2,7 +2,8 @@
 
 use std::{
     env::{self, args},
-    fs::read_to_string,
+    fs::{read_to_string, File},
+    io::{self, Write},
     process,
 };
 use toyscript::{self, ToyScript};
@@ -55,7 +56,7 @@ fn main() {
     let _ = to_run;
 
     let src = read_to_string(path_input.as_str()).unwrap();
-    let text = match ToyScript::to_wasm(path_input.as_str(), src.into_bytes()) {
+    let binary = match ToyScript::to_wasm(path_input.as_str(), src.into_bytes()) {
         Ok(v) => v,
         Err(err) => {
             eprintln!("{}", err);
@@ -63,5 +64,10 @@ fn main() {
         }
     };
 
-    println!("{}", text);
+    if let Some(path_output) = path_output {
+        let mut os = File::create(path_output).unwrap();
+        os.write(&binary).unwrap();
+    } else {
+        io::stdout().write(binary.as_slice()).unwrap();
+    }
 }
