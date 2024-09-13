@@ -10,14 +10,33 @@ export function add(a: int, b: int): int {
 }
 ```
 
+### break statement
+
+```
+'break'
+```
+
+- Interrupts execution of the innermost loop and exits outside the loop.
+- Cannot be used outside of a loop.
+
+### continue statement
+
+```
+'continue'
+```
+
+- Interrupts execution of the innermost loop and executes the next lap of the loop.
+- Cannot be used outside of a loop.
+
 ### for statement
 
 ```
 'for' '(' expr1 ';' expr2 ';' expr3 ')' '{' expr4 '}'
 ```
 
-- _Currently, not yet supported_
 - After executing `expr1`, evaluate `expr2` and repeat `expr4` and `expr3` for true.
+- `expr1` also permits assignment expressions with `let` statements.
+- `expr2` in this form is evaluated each time for each loop.
 - _Braces cannot be omitted_
 
 ### function statement
@@ -62,7 +81,7 @@ export function add(a: int, b: int): int {
 'declare' 'type' identifer '=' type
 ```
 
-### var statement
+### var statement (let, const)
 
 ```
 ('const' | 'let') identifier [':' type] ['=' expr] (',' identifier [':' type] ['=' expr])*

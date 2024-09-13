@@ -18,19 +18,37 @@ fn usage() -> ! {
     process::exit(1);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum OperationMode {
+    Default,
+    ShowAst,
+    ToRun,
+}
+
 fn main() {
     let mut args = args();
     let _ = args.next().unwrap();
 
-    let mut to_run = false;
+    let mut mode = OperationMode::Default;
     let mut path_input = None;
     let mut path_output = None;
 
     while let Some(arg) = args.next() {
         if arg.starts_with("-") {
             match arg.as_str() {
+                "-ast" => {
+                    if mode == OperationMode::Default {
+                        mode = OperationMode::ShowAst;
+                    } else {
+                        panic!("too many option: {}", arg)
+                    }
+                }
                 "-run" => {
-                    to_run = true;
+                    if mode == OperationMode::Default {
+                        mode = OperationMode::ToRun;
+                    } else {
+                        panic!("too many option: {}", arg)
+                    }
                 }
                 "-o" => match args.next() {
                     Some(v) => path_output = Some(v),
@@ -52,22 +70,34 @@ fn main() {
         Some(v) => v,
         None => usage(),
     };
-    let _ = path_output;
-    let _ = to_run;
-
     let src = read_to_string(path_input.as_str()).unwrap();
-    let binary = match ToyScript::to_wasm(path_input.as_str(), src.into_bytes()) {
-        Ok(v) => v,
-        Err(err) => {
-            eprintln!("{}", err);
-            process::exit(1)
-        }
-    };
 
-    if let Some(path_output) = path_output {
-        let mut os = File::create(path_output).unwrap();
-        os.write(&binary).unwrap();
-    } else {
-        io::stdout().write(binary.as_slice()).unwrap();
+    match mode {
+        OperationMode::Default => {
+            let binary = match ToyScript::to_wasm(path_input.as_str(), src.into_bytes()) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("{}", err);
+                    process::exit(1)
+                }
+            };
+
+            if let Some(path_output) = path_output {
+                let mut os = File::create(path_output).unwrap();
+                os.write(&binary).unwrap();
+            } else {
+                io::stdout().write(binary.as_slice()).unwrap();
+            }
+        }
+        OperationMode::ShowAst => {
+            match ToyScript::explain_ast(path_input.as_str(), src.into_bytes()) {
+                Ok(v) => println!("{}", v),
+                Err(err) => {
+                    eprintln!("{}", err);
+                    process::exit(1)
+                }
+            }
+        }
+        OperationMode::ToRun => todo!(),
     }
 }

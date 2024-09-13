@@ -183,8 +183,12 @@ impl Module {
             let mut subsec = Leb128Writer::new();
             subsec.write(func_names.len())?;
             for item in func_names {
-                subsec.write(item.0.as_usize())?;
-                subsec.write(&item.1)?;
+                // Since identifiers always begin with a “$”, delete the first character.
+                let name = item.1;
+                if name.len() > 1 {
+                    subsec.write(item.0.as_usize())?;
+                    subsec.write(&name[1..])?;
+                }
             }
             writer.write_byte(1)?;
             writer.write_blob(subsec.as_slice())?;

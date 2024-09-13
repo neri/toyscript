@@ -402,7 +402,7 @@ impl WasmOpcode {{
 
     write!(
         os,
-        "        _ => None
+        "            _ => None
         }}
     }}
 
@@ -551,7 +551,7 @@ impl WasmOpcode {{
             os,
             "
 
-    pub fn from_top_{}(top: toyir::Op) -> Option<Self> {{
+    pub fn from_tir_{}(top: toyir::Op) -> Option<Self> {{
         match top {{
 ",
             val_type
@@ -602,12 +602,12 @@ impl WasmOpcode {{
         os,
         "
 
-    pub fn from_top(top: toyir::Op, val_type: ValType) -> Option<Self> {{
+    pub fn from_tir(top: toyir::Op, val_type: ValType) -> Option<Self> {{
         match val_type {{
-            ValType::I32 => Self::from_top_i32(top),
-            ValType::I64 => Self::from_top_i64(top),
-            ValType::F32 => Self::from_top_f32(top),
-            ValType::F64 => Self::from_top_f64(top),
+            ValType::I32 => Self::from_tir_i32(top),
+            ValType::I64 => Self::from_tir_i64(top),
+            ValType::F32 => Self::from_tir_f32(top),
+            ValType::F64 => Self::from_tir_f64(top),
         }}
     }}
 

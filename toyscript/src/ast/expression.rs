@@ -48,6 +48,7 @@ pub enum Unary {
     Invoke(Box<Unary>, Box<[Expression]>),
 }
 
+#[derive(Debug)]
 pub enum FlatUnary {
     Void(TokenPosition),
 
@@ -64,6 +65,18 @@ pub enum FlatUnary {
     Subscript(Expression),
 
     Member(Identifier),
+}
+
+#[macro_export]
+macro_rules! ending_mode {
+    ( $( $ch:expr ),+ ) => {
+        Some(&[
+            $( TokenType::Symbol($ch) ),+
+        ])
+    };
+    ( $ch:expr ) => {
+        Some(&[TokenType::Symbol($ch)])
+    };
 }
 
 impl Expression {
@@ -90,9 +103,17 @@ impl Expression {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        match self.item.as_ref() {
+            Unary::Void(_) => true,
+            Unary::Parenthesis(expr) => expr.is_empty(),
+            _ => false,
+        }
+    }
+
     pub fn parse(
         tokens: &mut TokenStream<Keyword>,
-        allowed_ending: &[TokenType<Keyword>],
+        allowed_ending: Option<&[TokenType<Keyword>]>,
     ) -> Result<Self, CompileError> {
         Self::_parse_unary(tokens, allowed_ending, true)
             .and_then(|(items, position)| Self::finalize(items, position))
@@ -100,18 +121,23 @@ impl Expression {
 
     fn _parse_unary(
         tokens: &mut TokenStream<Keyword>,
-        allowed_ending: &[TokenType<Keyword>],
+        allowed_ending: Option<&[TokenType<Keyword>]>,
         allow_binary: bool,
     ) -> Result<(Vec<FlatUnary>, TokenPosition), CompileError> {
-        let allowed_ending = if allowed_ending.is_empty() {
-            &Self::DEFAULT_ENDING
-        } else {
-            allowed_ending
-        };
+        let ending_tokens = allowed_ending.unwrap_or(&Self::DEFAULT_ENDING);
+
         tokens.skip_ignorable();
         let position_start = tokens.peek().unwrap().position().start();
-
         let mut items = Vec::new();
+
+        if let Some(allowed_ending) = allowed_ending {
+            if allowed_ending.contains(&tokens.peek().unwrap().token_type()) {
+                let position_end = tokens.peek().unwrap().position().end();
+                let token_position = TokenPosition::new(position_start as u32, position_end as u32);
+                items.push(FlatUnary::Void(token_position));
+                return Ok((items, token_position));
+            }
+        }
 
         if tokens.expect_symbol('(').is_ok() {
             if tokens.expect_symbol(')').is_ok() {
@@ -121,7 +147,7 @@ impl Expression {
                     position_end as u32,
                 )));
             } else {
-                let expr = Self::parse(tokens, &[TokenType::Symbol(')')])?;
+                let expr = Self::parse(tokens, ending_mode!(')'))?;
                 expect_symbol(tokens, ')')?;
                 items.push(FlatUnary::Parenthesis(expr));
             }
@@ -178,13 +204,22 @@ impl Expression {
                     }
                 }
                 TokenType::Eof => {
-                    return Err(CompileError::missing_token(&token, allowed_ending));
+                    return Err(CompileError::missing_token(&token, ending_tokens));
                 }
                 _ => {
+                    if let Some(allowed_ending) = allowed_ending {
+                        if allowed_ending.contains(&token.token_type()) {
+                            let position_end = tokens.peek().unwrap().position().end();
+                            let position =
+                                TokenPosition::new(position_start as u32, position_end as u32);
+                            items.push(FlatUnary::Void(position));
+                            return Ok((items, position));
+                        }
+                    }
                     let position = token.position();
                     let op = UnaryOperator::parse_prefix(token, tokens)?;
                     let position = position.merged(&tokens.peek_last().unwrap().position());
-                    let (trails, _) = Self::_parse_unary(tokens, allowed_ending, false)?;
+                    let (trails, _) = Self::_parse_unary(tokens, Some(&[]), false)?;
                     items.extend(trails);
                     items.push(FlatUnary::Unary(op, position));
                 }
@@ -196,7 +231,7 @@ impl Expression {
                 let identifier = Identifier::from_tokens(tokens)?;
                 items.push(FlatUnary::Member(identifier));
             } else if tokens.expect_symbol('[').is_ok() {
-                let expr = Expression::parse(tokens, &[TokenType::Symbol(']')])?;
+                let expr = Expression::parse(tokens, ending_mode!(']'))?;
                 expect_symbol(tokens, ']')?;
                 items.push(FlatUnary::Subscript(expr));
             } else if tokens.expect_symbol('(').is_ok() {
@@ -206,10 +241,7 @@ impl Expression {
                         break;
                     }
 
-                    let expr = Expression::parse(
-                        tokens,
-                        &[TokenType::Symbol(','), TokenType::Symbol(')')],
-                    )?;
+                    let expr = Expression::parse(tokens, ending_mode!(',', ')'))?;
                     params.push(expr);
 
                     let _ = tokens.expect_symbol(',');
@@ -234,17 +266,14 @@ impl Expression {
 
         if allow_binary {
             if let Ok((binop, position)) = tokens.transaction(|tokens| {
-                if let Some(token) = tokens.shift() {
-                    let position = token.position();
-                    match BinaryOperator::parse(token, tokens) {
-                        Ok(v) => ControlFlow::Continue((
-                            v,
-                            position.merged(&tokens.peek_last().unwrap().position()),
-                        )),
-                        Err(_) => ControlFlow::Break(()),
-                    }
-                } else {
-                    ControlFlow::Break(())
+                let token = tokens.next_non_blank();
+                let position = token.position();
+                match BinaryOperator::parse(token, tokens) {
+                    Ok(v) => ControlFlow::Continue((
+                        v,
+                        position.merged(&tokens.peek_last().unwrap().position()),
+                    )),
+                    Err(_) => ControlFlow::Break(()),
                 }
             }) {
                 items.push(FlatUnary::Binary(binop, position));
@@ -256,23 +285,22 @@ impl Expression {
         let position_end = tokens.peek().unwrap().position().start();
         let token_position = TokenPosition::new(position_start as u32, position_end as u32);
 
-        if !allowed_ending.contains(&TokenType::NewLine) {
-            tokens.skip_ignorable();
-        }
-        if let Some(token) = tokens.peek() {
-            if allowed_ending.contains(token.token_type()) {
-                return Ok((items, token_position));
+        if let Some(allowed_ending) = allowed_ending {
+            if !allowed_ending.contains(&TokenType::NewLine) {
+                tokens.skip_ignorable();
             }
         }
-        if allow_binary {
-            let token = tokens.peek().unwrap();
-            if allowed_ending == Self::DEFAULT_ENDING {
-                Err(CompileError::missing_eol(&token))
-            } else {
-                Err(CompileError::missing_token(&token, allowed_ending))
-            }
-        } else {
+        let token = tokens.peek().unwrap();
+        if ending_tokens.is_empty() {
             Ok((items, token_position))
+        } else if ending_tokens.contains(&token.token_type()) {
+            Ok((items, token_position))
+        } else {
+            if let Some(allowed_ending) = allowed_ending {
+                Err(CompileError::missing_token(&token, allowed_ending))
+            } else {
+                Err(CompileError::missing_eol(&token))
+            }
         }
     }
 
@@ -565,7 +593,7 @@ impl UnaryOperator {
     pub fn parse_postfix(
         tokens: &mut TokenStream<Keyword>,
     ) -> Result<(Self, TokenPosition), CompileError> {
-        let token = tokens.shift().unwrap();
+        let token = tokens.next_non_blank();
         match token.token_type() {
             TokenType::Symbol(symbol) => match symbol {
                 '+' => {

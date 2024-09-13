@@ -38,7 +38,7 @@ pub enum Statement {
     IfStatement(Box<[IfType]>),
 
     /// `for` `(` expr `;` expr `;` expr `)` `{` block `}`
-    ForStatement(Box<[Expression; 3]>, Block),
+    ForStatement(Box<ForStatement>),
 
     /// `while` expr `{` block `}`
     WhileStatement(Expression, Block),
@@ -61,6 +61,20 @@ pub enum IfType {
     If(Expression, Block),
     ElseIf(Expression, Block),
     Else(Block),
+}
+
+#[derive(Debug)]
+pub struct ForStatement {
+    pub(crate) init: ForInit,
+    pub(crate) cond: Expression,
+    pub(crate) step: Expression,
+    pub(crate) block: Block,
+}
+
+#[derive(Debug)]
+pub enum ForInit {
+    Var(VariableDeclaration),
+    Expr(Expression),
 }
 
 impl Statement {
@@ -87,8 +101,12 @@ impl Statement {
                             return Ok(Self::Function(Box::new(func_decl)));
                         }
                         Keyword::Const | Keyword::Let | Keyword::Var => {
-                            let var_decl =
-                                VariableDeclaration::parse(modifiers.as_slice(), token, tokens)?;
+                            let var_decl = VariableDeclaration::parse(
+                                modifiers.as_slice(),
+                                token,
+                                tokens,
+                                None,
+                            )?;
                             return Ok(Self::Variable(var_decl));
                         }
                         Keyword::Class => {
@@ -107,16 +125,34 @@ impl Statement {
                             }
 
                             expect_symbol(tokens, '(')?;
-                            let init = Expression::parse(tokens, &[TokenType::Symbol(';')])?;
+
+                            let init = if let Ok(token) =
+                                expect(tokens, &[TokenType::Keyword(Keyword::Let)])
+                            {
+                                ForInit::Var(VariableDeclaration::parse(
+                                    &[],
+                                    token,
+                                    tokens,
+                                    Some(&[TokenType::Symbol(';')]),
+                                )?)
+                            } else {
+                                ForInit::Expr(Expression::parse(tokens, ending_mode!(';'))?)
+                            };
+
                             expect_symbol(tokens, ';')?;
-                            let cond = Expression::parse(tokens, &[TokenType::Symbol(';')])?;
+                            let cond = Expression::parse(tokens, ending_mode!(';'))?;
                             expect_symbol(tokens, ';')?;
-                            let step = Expression::parse(tokens, &[TokenType::Symbol(')')])?;
+                            let step = Expression::parse(tokens, ending_mode!(')'))?;
                             expect_symbol(tokens, ')')?;
 
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
-                            return Ok(Self::ForStatement(Box::new([init, cond, step]), block));
+                            return Ok(Self::ForStatement(Box::new(ForStatement {
+                                init,
+                                cond,
+                                step,
+                                block,
+                            })));
                         }
 
                         Keyword::Declare => {
@@ -157,7 +193,7 @@ impl Statement {
                                     token.position(),
                                 )));
                             } else {
-                                let expr: Expression = Expression::parse(tokens, &[])?;
+                                let expr: Expression = Expression::parse(tokens, None)?;
                                 expect_eol(tokens)?;
                                 return Ok(Self::ReturnStatement(expr));
                             }
@@ -166,7 +202,7 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
-                            let expr = Expression::parse(tokens, &[TokenType::Symbol('{')])?;
+                            let expr = Expression::parse(tokens, ending_mode!('{'))?;
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
                             let mut statements = Vec::new();
@@ -176,8 +212,7 @@ impl Statement {
                                     break;
                                 }
                                 if tokens.expect(&[TokenType::Keyword(Keyword::If)]).is_ok() {
-                                    let expr =
-                                        Expression::parse(tokens, &[TokenType::Symbol('{')])?;
+                                    let expr = Expression::parse(tokens, ending_mode!('{'))?;
                                     let begin_block = expect_symbol(tokens, '{')?;
                                     let block = Block::parse(begin_block, tokens)?;
                                     statements.push(IfType::ElseIf(expr, block));
@@ -193,7 +228,7 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
-                            let expr = Expression::parse(tokens, &[TokenType::Symbol('{')])?;
+                            let expr = Expression::parse(tokens, ending_mode!('{'))?;
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
                             return Ok(Self::WhileStatement(expr, block));
@@ -217,7 +252,7 @@ impl Statement {
                                 return Err(CompileError::unexpected_token(&token));
                             }
                             tokens.unshift();
-                            let expr = Expression::parse(tokens, &[])?;
+                            let expr = Expression::parse(tokens, None)?;
                             expect_eol(tokens)?;
                             return Ok(Self::Expression(expr));
                         }
@@ -235,7 +270,7 @@ impl Statement {
                         return Err(CompileError::unexpected_token(&token));
                     }
                     tokens.unshift();
-                    let expr = Expression::parse(tokens, &[])?;
+                    let expr = Expression::parse(tokens, None)?;
                     expect_eol(tokens)?;
                     return Ok(Self::Expression(expr));
                 }

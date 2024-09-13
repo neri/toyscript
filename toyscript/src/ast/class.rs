@@ -106,6 +106,7 @@ impl ClassDeclaration {
                                     modifiers.as_slice(),
                                     token,
                                     tokens,
+                                    None,
                                 )?;
                                 variables.push(member);
                             }
@@ -236,7 +237,7 @@ impl EnumDeclaration {
                         let identifier = Identifier::from_token(&token);
 
                         let assignment = if tokens.expect_symbol('=').is_ok() {
-                            Some(Expression::parse(tokens, &[TokenType::Symbol(',')])?)
+                            Some(Expression::parse(tokens, ending_mode!(','))?)
                         } else {
                             None
                         };

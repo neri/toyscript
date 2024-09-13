@@ -241,6 +241,12 @@ impl CompileError {
     }
 
     #[inline]
+    pub fn invalid_type2(type_str: &str, position: TokenPosition) -> Self {
+        let explanation = format!("Invalid use of type `{}`", type_str);
+        Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
+    }
+
+    #[inline]
     pub fn const_out_of_range(value: String, position: TokenPosition) -> Self {
         let explanation = format!("Constant value '{}' is Out of range", value);
         Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))

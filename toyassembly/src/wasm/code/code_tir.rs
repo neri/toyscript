@@ -8,7 +8,7 @@ use toyir::CodeStreamIter;
 use types::ValType;
 use wasm::opcode::WasmOpcode;
 
-use toyir::Op as TOP;
+use toyir::Op as TIR;
 
 pub(super) struct TirToWasm;
 
@@ -31,17 +31,17 @@ impl TirToWasm {
         for tir in CodeStreamIter::new(src) {
             let opcode = tir.opcode();
             match opcode {
-                TOP::Nop => {}
+                TIR::Nop => {}
 
-                TOP::Unreachable => {
+                TIR::Unreachable => {
                     writer.write(WasmOpcode::Unreachable).unwrap();
                 }
 
-                TOP::Block | TOP::Loop => {
+                TIR::Block | TIR::Loop => {
                     let inst_type = match opcode {
-                        TOP::Block => BlockInstType::Block,
-                        TOP::Loop => BlockInstType::Loop,
-                        // TOP::If => BlockInstType::If,
+                        TIR::Block => BlockInstType::Block,
+                        TIR::Loop => BlockInstType::Loop,
+                        // TIR::If => BlockInstType::If,
                         _ => unreachable!(),
                     };
                     let mnemonic = inst_type.as_wasm();
@@ -54,7 +54,7 @@ impl TirToWasm {
                     writer.write_byte(0x40).unwrap();
                 }
 
-                TOP::End => match block_stack.pop() {
+                TIR::End => match block_stack.pop() {
                     Some(_) => writer.write(WasmOpcode::End).unwrap(),
                     None => {
                         return Err(AssembleError::out_of_bounds(
@@ -64,15 +64,14 @@ impl TirToWasm {
                     }
                 },
 
-                TOP::Br => {
+                TIR::Br => {
                     let index = BlockIndex(Self::get_params(tir.params(), 0)?);
                     let target = block_stack.solve(index)?;
                     writer.write(WasmOpcode::Br).unwrap();
                     writer.write(target).unwrap();
                 }
 
-                TOP::BrIf => {
-                    // TODO: stack check
+                TIR::BrIf => {
                     let index = BlockIndex(Self::get_params(tir.params(), 0)?);
                     let ssa_index = Self::get_params(tir.params(), 1)?;
                     let target = block_stack.solve(index)?;
@@ -82,7 +81,7 @@ impl TirToWasm {
                     writer.write(target).unwrap();
                 }
 
-                TOP::Call => {
+                TIR::Call => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let target = Self::get_params(tir.params(), 1)?;
 
@@ -118,13 +117,13 @@ impl TirToWasm {
                     writer.write(target).unwrap();
                 }
 
-                TOP::Drop => {
+                TIR::Drop => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     value_stack.expect(ssa_index)?;
                     writer.write(WasmOpcode::Drop).unwrap();
                 }
 
-                TOP::Return => {
+                TIR::Return => {
                     if let Some(result_type) = results.iter().next() {
                         let ssa_index = Self::get_params(tir.params(), 0)?;
                         value_stack.expect_type(ssa_index, *result_type)?;
@@ -133,7 +132,7 @@ impl TirToWasm {
                     writer.write(WasmOpcode::Return).unwrap();
                 }
 
-                TOP::I32Const => {
+                TIR::I32Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let const_val = Self::get_params(tir.params(), 1)?;
                     value_stack.push(ssa_index, ValType::I32);
@@ -142,7 +141,7 @@ impl TirToWasm {
                     writer.write(const_val as i32).unwrap();
                 }
 
-                TOP::I64Const => {
+                TIR::I64Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let const_low = Self::get_params(tir.params(), 1)?;
                     let const_hi = Self::get_params(tir.params(), 2)?;
@@ -152,7 +151,7 @@ impl TirToWasm {
                     writer.write(WasmOpcode::I64Const).unwrap();
                     writer.write(const_val as i64).unwrap();
                 }
-                TOP::F32Const => {
+                TIR::F32Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let const_val = Self::get_params(tir.params(), 1)?;
                     value_stack.push(ssa_index, ValType::F64);
@@ -160,7 +159,7 @@ impl TirToWasm {
                     writer.write(WasmOpcode::F32Const).unwrap();
                     writer.write(f32::from_bits(const_val)).unwrap();
                 }
-                TOP::F64Const => {
+                TIR::F64Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let const_low = Self::get_params(tir.params(), 1)?;
                     let const_hi = Self::get_params(tir.params(), 2)?;
@@ -171,7 +170,7 @@ impl TirToWasm {
                     writer.write(f64::from_bits(const_val)).unwrap();
                 }
 
-                TOP::LocalGet => {
+                TIR::LocalGet => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let local_idx = Self::get_params(tir.params(), 1)?;
                     let local_type = *local_and_params.get(local_idx as usize).unwrap();
@@ -180,7 +179,7 @@ impl TirToWasm {
                     writer.write(WasmOpcode::LocalGet).unwrap();
                     writer.write(local_idx as i32).unwrap();
                 }
-                TOP::LocalSet => {
+                TIR::LocalSet => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let local_idx = Self::get_params(tir.params(), 1)?;
                     let local_type = *local_and_params.get(local_idx as usize).unwrap();
@@ -189,7 +188,7 @@ impl TirToWasm {
                     writer.write(WasmOpcode::LocalSet).unwrap();
                     writer.write(local_idx as i32).unwrap();
                 }
-                TOP::LocalTee => {
+                TIR::LocalTee => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let local_idx = Self::get_params(tir.params(), 1)?;
                     let operand = Self::get_params(tir.params(), 2)?;
@@ -202,21 +201,21 @@ impl TirToWasm {
                 }
 
                 // binop
-                TOP::Add
-                | TOP::Sub
-                | TOP::Mul
-                | TOP::DivS
-                | TOP::DivU
-                | TOP::RemS
-                | TOP::RemU
-                | TOP::Shl
-                | TOP::ShrS
-                | TOP::ShrU
-                | TOP::And
-                | TOP::Or
-                | TOP::Xor
-                | TOP::Rotl
-                | TOP::Rotr => {
+                TIR::Add
+                | TIR::Sub
+                | TIR::Mul
+                | TIR::DivS
+                | TIR::DivU
+                | TIR::RemS
+                | TIR::RemU
+                | TIR::Shl
+                | TIR::ShrS
+                | TIR::ShrU
+                | TIR::And
+                | TIR::Or
+                | TIR::Xor
+                | TIR::Rotl
+                | TIR::Rotr => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let lhs_i = Self::get_params(tir.params(), 1)?;
                     let rhs_i = Self::get_params(tir.params(), 2)?;
@@ -225,7 +224,7 @@ impl TirToWasm {
                     let lhs_t = value_stack.expect_type(lhs_i, rhs_t)?;
                     value_stack.push(result, lhs_t);
 
-                    let mnemonic = WasmOpcode::from_top(opcode, lhs_t).ok_or(
+                    let mnemonic = WasmOpcode::from_tir(opcode, lhs_t).ok_or(
                         AssembleError::internal_inconsistency(
                             &format!("invalid operator '{}' for type '{}'", opcode, lhs_t),
                             ErrorPosition::Unspecified,
@@ -235,16 +234,16 @@ impl TirToWasm {
                 }
 
                 // cmp
-                TOP::Eq
-                | TOP::Ne
-                | TOP::LtS
-                | TOP::LtU
-                | TOP::GtS
-                | TOP::GtU
-                | TOP::LeS
-                | TOP::LeU
-                | TOP::GeS
-                | TOP::GeU => {
+                TIR::Eq
+                | TIR::Ne
+                | TIR::LtS
+                | TIR::LtU
+                | TIR::GtS
+                | TIR::GtU
+                | TIR::LeS
+                | TIR::LeU
+                | TIR::GeS
+                | TIR::GeU => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let lhs_i = Self::get_params(tir.params(), 1)?;
                     let rhs_i = Self::get_params(tir.params(), 2)?;
@@ -253,7 +252,7 @@ impl TirToWasm {
                     let lhs_t = value_stack.expect_type(lhs_i, rhs_t)?;
                     value_stack.push(result, ValType::I32);
 
-                    let mnemonic = WasmOpcode::from_top(opcode, lhs_t).ok_or(
+                    let mnemonic = WasmOpcode::from_tir(opcode, lhs_t).ok_or(
                         AssembleError::internal_inconsistency(
                             &format!("invalid operator '{}' for type '{}'", opcode, lhs_t),
                             ErrorPosition::Unspecified,
@@ -263,13 +262,13 @@ impl TirToWasm {
                 }
 
                 // unop
-                TOP::Eqz | TOP::Clz | TOP::Ctz | TOP::Popcnt => {
+                TIR::Eqz | TIR::Clz | TIR::Ctz | TIR::Popcnt => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let operand = Self::get_params(tir.params(), 1)?;
                     let val_type = value_stack.expect(operand)?;
                     value_stack.push(result, val_type);
 
-                    let mnemonic = WasmOpcode::from_top(opcode, val_type).ok_or(
+                    let mnemonic = WasmOpcode::from_tir(opcode, val_type).ok_or(
                         AssembleError::internal_inconsistency(
                             &format!("invalid operator '{}' for type '{}'", opcode, val_type),
                             ErrorPosition::Unspecified,
@@ -279,64 +278,64 @@ impl TirToWasm {
                 }
 
                 // special unop
-                TOP::UnaryNop | TOP::Not | TOP::Inc | TOP::Dec => {
+                TIR::UnaryNop | TIR::Not | TIR::Inc | TIR::Dec => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let operand = Self::get_params(tir.params(), 1)?;
                     let val_type = value_stack.expect(operand)?;
                     value_stack.push(result, val_type);
 
                     match (opcode, val_type) {
-                        (TOP::UnaryNop, _) => {}
+                        (TIR::UnaryNop, _) => {}
 
-                        (TOP::Inc, ValType::I32) => {
+                        (TIR::Inc, ValType::I32) => {
                             writer.write(WasmOpcode::I32Const).unwrap();
                             writer.write(1).unwrap();
                             writer.write(WasmOpcode::I32Add).unwrap();
                         }
-                        (TOP::Dec, ValType::I32) => {
+                        (TIR::Dec, ValType::I32) => {
                             writer.write(WasmOpcode::I32Const).unwrap();
                             writer.write(-1).unwrap();
                             writer.write(WasmOpcode::I32Add).unwrap();
                         }
-                        (TOP::Not, ValType::I32) => {
+                        (TIR::Not, ValType::I32) => {
                             writer.write(WasmOpcode::I32Const).unwrap();
                             writer.write(-1).unwrap();
                             writer.write(WasmOpcode::I32And).unwrap();
                         }
 
-                        (TOP::Inc, ValType::I64) => {
+                        (TIR::Inc, ValType::I64) => {
                             writer.write(WasmOpcode::I64Const).unwrap();
                             writer.write(1).unwrap();
                             writer.write(WasmOpcode::I64Add).unwrap();
                         }
-                        (TOP::Dec, ValType::I64) => {
+                        (TIR::Dec, ValType::I64) => {
                             writer.write(WasmOpcode::I64Const).unwrap();
                             writer.write(-1).unwrap();
                             writer.write(WasmOpcode::I64Add).unwrap();
                         }
-                        (TOP::Not, ValType::I64) => {
+                        (TIR::Not, ValType::I64) => {
                             writer.write(WasmOpcode::I64Const).unwrap();
                             writer.write(-1).unwrap();
                             writer.write(WasmOpcode::I64And).unwrap();
                         }
 
-                        (TOP::Inc, ValType::F32) => {
+                        (TIR::Inc, ValType::F32) => {
                             writer.write(WasmOpcode::F32Const).unwrap();
                             writer.write(1.0f32).unwrap();
                             writer.write(WasmOpcode::F32Add).unwrap();
                         }
-                        (TOP::Dec, ValType::F32) => {
+                        (TIR::Dec, ValType::F32) => {
                             writer.write(WasmOpcode::F32Const).unwrap();
                             writer.write(1.0f32).unwrap();
                             writer.write(WasmOpcode::F32Sub).unwrap();
                         }
 
-                        (TOP::Inc, ValType::F64) => {
+                        (TIR::Inc, ValType::F64) => {
                             writer.write(WasmOpcode::F64Const).unwrap();
                             writer.write(1.0f32).unwrap();
                             writer.write(WasmOpcode::F64Add).unwrap();
                         }
-                        (TOP::Dec, ValType::F64) => {
+                        (TIR::Dec, ValType::F64) => {
                             writer.write(WasmOpcode::F64Const).unwrap();
                             writer.write(1.0f32).unwrap();
                             writer.write(WasmOpcode::F64Sub).unwrap();
@@ -351,11 +350,12 @@ impl TirToWasm {
                     }
                 }
 
+                #[allow(unreachable_patterns)]
                 _ => {
-                    // return Err(AssembleError::internal_inconsistency(
-                    //     &format!("Unknown opcoe {}", opcode),
-                    //     ErrorPosition::Unspecified,
-                    // ))
+                    return Err(AssembleError::internal_inconsistency(
+                        &format!("Unknown opcoe {}", opcode),
+                        ErrorPosition::Unspecified,
+                    ))
                 }
             }
         }

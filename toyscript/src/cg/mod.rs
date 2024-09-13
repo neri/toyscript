@@ -8,6 +8,7 @@ use ast::{
     expression::{BinaryOperator, Expression, Unary, UnaryOperator},
     integer::Integer,
     statement::{IfType, Statement},
+    variable::VariableDeclaration,
 };
 use keyword::ModifierFlag;
 use scope::{Scope, VariableDescriptor, VariableStorage};
@@ -78,7 +79,7 @@ impl CodeGen {
                 | Statement::Variable(_)
                 | Statement::WhileStatement(_, _)
                 | Statement::Enum(_)
-                | Statement::ForStatement(_, _) => {
+                | Statement::ForStatement(_) => {
                     return Err(CompileError::out_of_context(
                         format!("{:#?}", statement).as_str(),
                         TokenPosition::empty(),
@@ -193,6 +194,50 @@ impl CodeGen {
         Ok(function)
     }
 
+    fn process_var(
+        asm: &mut toyir::FunctionAssembler,
+        scope: &mut Scope,
+        var_decl: &VariableDeclaration,
+    ) -> Result<(), CompileError> {
+        for var_decl in var_decl.varibales() {
+            let type_desc = match var_decl.type_desc() {
+                Some(type_desc) => scope
+                    .types()
+                    .get(type_desc.identifier().as_str())
+                    .ok_or(CompileError::identifier_not_found(type_desc.identifier()))
+                    .and_then(|v| {
+                        if v.is_special() {
+                            Err(CompileError::invalid_type(type_desc.identifier()))
+                        } else {
+                            Ok(Some(v))
+                        }
+                    })?,
+                None => None,
+            };
+            let mut var_desc = VariableDescriptor::from_var_decl(var_decl, type_desc);
+            var_desc.set_index(asm.alloc_local());
+            let localidx = var_desc.index();
+
+            let expected_type = var_desc.inferred_type().optimistic_type();
+            if let Some(expr) = var_decl.assignment() {
+                let expr_position = expr.position();
+                let expr_type = Self::process_expression(asm, expr, expected_type, scope)?;
+
+                if let Some(ref expr_type) = expr_type {
+                    var_desc.infer(expr_type, expr_position)?;
+                }
+
+                scope.declare_local(var_desc)?;
+
+                asm.ir_local_set(localidx)?;
+            } else {
+                scope.declare_local(var_desc)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn process_block(
         asm: &mut toyir::FunctionAssembler,
         block: &Block,
@@ -208,42 +253,7 @@ impl CodeGen {
                 Statement::Eof(_) => break,
 
                 Statement::Variable(var_decl) => {
-                    for var_decl in var_decl.varibales() {
-                        let type_desc = match var_decl.type_desc() {
-                            Some(type_desc) => scope
-                                .types()
-                                .get(type_desc.identifier().as_str())
-                                .ok_or(CompileError::identifier_not_found(type_desc.identifier()))
-                                .and_then(|v| {
-                                    if v.is_special() {
-                                        Err(CompileError::invalid_type(type_desc.identifier()))
-                                    } else {
-                                        Ok(Some(v))
-                                    }
-                                })?,
-                            None => None,
-                        };
-                        let mut var_desc = VariableDescriptor::from_var_decl(var_decl, type_desc);
-                        var_desc.set_index(asm.alloc_local());
-                        let localidx = var_desc.index();
-
-                        let expected_type = var_desc.inferred_type().optimistic_type();
-                        if let Some(expr) = var_decl.assignment() {
-                            let expr_position = expr.position();
-                            let expr_type =
-                                Self::process_expression(asm, expr, expected_type, scope)?;
-
-                            if let Some(ref expr_type) = expr_type {
-                                var_desc.infer(expr_type, expr_position)?;
-                            }
-
-                            scope.declare_local(var_desc)?;
-
-                            asm.ir_local_set(localidx)?;
-                        } else {
-                            scope.declare_local(var_desc)?;
-                        }
-                    }
+                    Self::process_var(asm, scope, var_decl)?;
                 }
 
                 Statement::Block(block) => {
@@ -382,6 +392,67 @@ impl CodeGen {
                     asm.ir_end(break_index)?;
                 }
 
+                Statement::ForStatement(for_statement) => {
+                    let mut scope = scope.scoped(None, None);
+                    let break_index = asm.ir_block();
+
+                    match for_statement.init {
+                        ast::statement::ForInit::Var(ref var_decl) => {
+                            Self::process_var(asm, &mut scope, var_decl)?;
+                        }
+                        ast::statement::ForInit::Expr(ref expr) => {
+                            let expr_type = scope.types().canonical(
+                                Self::process_expression(asm, expr, None, &scope)?.as_ref(),
+                            );
+                            if !expr_type.is_special() {
+                                asm.ir_drop()?;
+                            }
+                        }
+                    }
+
+                    let loop_index = asm.ir_loop();
+                    let continue_index = asm.ir_block();
+                    let mut scope = scope.scoped(Some(break_index), Some(continue_index));
+
+                    if for_statement.cond.is_empty() {
+                        // for ever loop
+                    } else {
+                        let expr_type = scope.types().canonical(
+                            Self::process_expression(
+                                asm,
+                                &for_statement.cond,
+                                Some(&builtin_boolean),
+                                &scope,
+                            )?
+                            .as_ref(),
+                        );
+
+                        if expr_type.is_never() {
+                            // never
+                        } else {
+                            asm.ir_invert()?;
+                            asm.ir_br_if(break_index)?;
+                        }
+                    }
+
+                    let _block_type =
+                        Self::process_block(asm, &for_statement.block, &mut scope, return_type)?;
+                    // let block_type = scope.types().canonical(block_type.as_ref());
+
+                    asm.ir_end(continue_index)?;
+
+                    let expr_type = scope.types().canonical(
+                        Self::process_expression(asm, &for_statement.step, None, &scope)?.as_ref(),
+                    );
+                    if !expr_type.is_special() {
+                        asm.ir_drop()?;
+                    }
+
+                    asm.ir_br(loop_index)?;
+                    asm.ir_end(loop_index)?;
+                    asm.ir_end(break_index)?;
+                }
+
                 Statement::Expression(expr) => {
                     let expr_type = scope
                         .types()
@@ -423,8 +494,7 @@ impl CodeGen {
                     }
                 }
 
-                Statement::ForStatement(_, _)
-                | Statement::Enum(_)
+                Statement::Enum(_)
                 | Statement::TypeAlias(_, _)
                 | Statement::Function(_)
                 | &Statement::Class(_) => {
@@ -692,6 +762,12 @@ impl CodeGen {
                     let type2 = result_type
                         .optimistic_type()
                         .ok_or(CompileError::could_not_infer2(item.position()))?;
+                    if type2.is_special() {
+                        return Err(CompileError::invalid_type2(
+                            type2.identifier(),
+                            item.position(),
+                        ));
+                    }
                     let type2 = scope
                         .types()
                         .resolve_primitive(type2)
@@ -701,7 +777,15 @@ impl CodeGen {
 
                 UnaryOperator::BitNot | UnaryOperator::LogicalNot => {
                     let result_type = Self::generate_unary(asm, value, scope)?;
-                    if result_type.optimistic_type().unwrap().is_boolean() {
+                    let type2 = result_type
+                        .optimistic_type()
+                        .ok_or(CompileError::could_not_infer2(item.position()))?;
+                    if type2.is_special() {
+                        return Err(CompileError::invalid_type2(
+                            type2.identifier(),
+                            item.position(),
+                        ));
+                    } else if type2.is_boolean() {
                         asm.ir_invert()?;
                     } else {
                         asm.emit_unop(toyir::Op::Not)?;

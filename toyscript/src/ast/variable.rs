@@ -28,7 +28,14 @@ impl VariableDeclaration {
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
+        ending_tokens: Option<&[TokenType<Keyword>]>,
     ) -> Result<Self, CompileError> {
+        let allowed_ending = ending_tokens.unwrap_or(&[
+            TokenType::NewLine,
+            TokenType::Symbol(','),
+            TokenType::Symbol(';'),
+            TokenType::Symbol('}'),
+        ]);
         let _position_start = modifier_tokens
             .iter()
             .min_by(|a, b| a.position().start().cmp(&b.position().start()))
@@ -65,15 +72,7 @@ impl VariableDeclaration {
             };
 
             let assignment = if let Ok(_) = tokens.expect_symbol('=') {
-                let assignment = Expression::parse(
-                    tokens,
-                    &[
-                        TokenType::NewLine,
-                        TokenType::Symbol(','),
-                        TokenType::Symbol(';'),
-                        TokenType::Symbol('}'),
-                    ],
-                )?;
+                let assignment = Expression::parse(tokens, Some(allowed_ending))?;
                 Some(assignment)
             } else {
                 None
@@ -91,7 +90,9 @@ impl VariableDeclaration {
             }
         }
 
-        expect_eol(tokens)?;
+        if ending_tokens.is_none() {
+            expect_eol(tokens)?;
+        }
 
         Ok(Self {
             modifiers: modifiers.into_boxed_slice(),

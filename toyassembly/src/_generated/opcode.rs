@@ -974,7 +974,7 @@ impl WasmOpcode {
             Self::I64TruncSatF64U => Some(7),
             Self::MemoryCopy => Some(10),
             Self::MemoryFill => Some(11),
-        _ => None
+            _ => None
         }
     }
 
@@ -1149,7 +1149,7 @@ impl WasmOpcode {
         }
     }
 
-    pub fn from_top_i32(top: toyir::Op) -> Option<Self> {
+    pub fn from_tir_i32(top: toyir::Op) -> Option<Self> {
         match top {
             toyir::Op::Eqz => Some(Self::I32Eqz),
             toyir::Op::Eq => Some(Self::I32Eq),
@@ -1184,7 +1184,7 @@ impl WasmOpcode {
         }
     }
 
-    pub fn from_top_i64(top: toyir::Op) -> Option<Self> {
+    pub fn from_tir_i64(top: toyir::Op) -> Option<Self> {
         match top {
             toyir::Op::Eqz => Some(Self::I64Eqz),
             toyir::Op::Eq => Some(Self::I64Eq),
@@ -1219,7 +1219,7 @@ impl WasmOpcode {
         }
     }
 
-    pub fn from_top_f32(top: toyir::Op) -> Option<Self> {
+    pub fn from_tir_f32(top: toyir::Op) -> Option<Self> {
         match top {
             toyir::Op::Eq => Some(Self::F32Eq),
             toyir::Op::Ne => Some(Self::F32Ne),
@@ -1235,7 +1235,7 @@ impl WasmOpcode {
         }
     }
 
-    pub fn from_top_f64(top: toyir::Op) -> Option<Self> {
+    pub fn from_tir_f64(top: toyir::Op) -> Option<Self> {
         match top {
             toyir::Op::Eq => Some(Self::F64Eq),
             toyir::Op::Ne => Some(Self::F64Ne),
@@ -1251,12 +1251,12 @@ impl WasmOpcode {
         }
     }
 
-    pub fn from_top(top: toyir::Op, val_type: ValType) -> Option<Self> {
+    pub fn from_tir(top: toyir::Op, val_type: ValType) -> Option<Self> {
         match val_type {
-            ValType::I32 => Self::from_top_i32(top),
-            ValType::I64 => Self::from_top_i64(top),
-            ValType::F32 => Self::from_top_f32(top),
-            ValType::F64 => Self::from_top_f64(top),
+            ValType::I32 => Self::from_tir_i32(top),
+            ValType::I64 => Self::from_tir_i64(top),
+            ValType::F32 => Self::from_tir_f32(top),
+            ValType::F64 => Self::from_tir_f64(top),
         }
     }
 
