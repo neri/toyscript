@@ -56,7 +56,7 @@ export function add(a: int, b: int): int {
 ```
 
 - Evaluates `expr1` and executes `expr2` if true, otherwise `expr3`.
-- _Braces cannot be omitted_]
+- _Braces cannot be omitted_
 
 ### return statement
 

@@ -17,8 +17,13 @@ impl Identifier {
 
     #[inline]
     pub fn new(identifier: &str, id_position: TokenPosition) -> Self {
+        let position = if id_position.start() == 0 && id_position.end() == 0 {
+            TokenPosition::new(0, identifier.len() as u32)
+        } else {
+            id_position
+        };
         Self {
-            str: ArcStringSlice::from_str(identifier, id_position),
+            str: ArcStringSlice::from_str(identifier, position),
         }
     }
 

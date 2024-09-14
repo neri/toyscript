@@ -2,9 +2,9 @@
 
 use super::Identifier;
 use crate::{keyword::Keyword, *};
-use ast::integer::Integer;
+use ast::{class::TypeDescriptor, integer::Integer};
 use core::ops::ControlFlow;
-use token::{StringLiteralError, TokenPosition, TokenStream};
+use token::{QuoteType, StringLiteralError, TokenPosition, TokenStream};
 
 #[derive(Clone)]
 pub struct Expression {
@@ -24,7 +24,10 @@ pub enum Unary {
     NumericLiteral(Integer, TokenPosition),
 
     /// String Literal
-    StringLiteral(String, TokenPosition),
+    StringLiteral(Box<str>, TokenPosition),
+
+    /// Char Literal
+    CharLiteral(char, TokenPosition),
 
     /// Constant keyword
     Constant(Keyword, TokenPosition),
@@ -46,6 +49,9 @@ pub enum Unary {
 
     /// Invoke - (expression) `(` expression, ...`)`
     Invoke(Box<Unary>, Box<[Expression]>),
+
+    /// unary as a type
+    Assertion(Box<Unary>, TypeDescriptor, TokenPosition),
 }
 
 #[derive(Debug)]
@@ -65,6 +71,8 @@ pub enum FlatUnary {
     Subscript(Expression),
 
     Member(Identifier),
+
+    Assertion(TypeDescriptor, TokenPosition),
 }
 
 #[macro_export]
@@ -119,6 +127,23 @@ impl Expression {
             .and_then(|(items, position)| Self::finalize(items, position))
     }
 
+    /// Skip whitespace except for newlines
+    fn skip_blank(tokens: &mut TokenStream<Keyword>) {
+        loop {
+            if let Some(token) = tokens.peek() {
+                match token.token_type() {
+                    TokenType::Whitespace | TokenType::LineComment | TokenType::BlockComment => {
+                        tokens.shift();
+                        continue;
+                    }
+                    _ => break,
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
     fn _parse_unary(
         tokens: &mut TokenStream<Keyword>,
         allowed_ending: Option<&[TokenType<Keyword>]>,
@@ -127,6 +152,8 @@ impl Expression {
         let ending_tokens = allowed_ending.unwrap_or(&Self::DEFAULT_ENDING);
 
         tokens.skip_ignorable();
+        // Self::skip_blank(tokens);
+
         let position_start = tokens.peek().unwrap().position().start();
         let mut items = Vec::new();
 
@@ -139,20 +166,18 @@ impl Expression {
             }
         }
 
-        if tokens.expect_symbol('(').is_ok() {
-            if tokens.expect_symbol(')').is_ok() {
-                let position_end = tokens.peek().unwrap().position().end();
-                items.push(FlatUnary::Void(TokenPosition::new(
-                    position_start as u32,
-                    position_end as u32,
-                )));
-            } else {
-                let expr = Self::parse(tokens, ending_mode!(')'))?;
-                expect_symbol(tokens, ')')?;
-                items.push(FlatUnary::Parenthesis(expr));
-            }
-        } else if let Some(token) = tokens.shift() {
+        // if tokens.expect_symbol('(').is_ok() {
+        //     let expr = Self::parse(tokens, ending_mode!(')'))?;
+        //     expect_symbol(tokens, ')')?;
+        //     items.push(FlatUnary::Parenthesis(expr));
+        // } else
+        if let Some(token) = tokens.shift() {
             match token.token_type() {
+                TokenType::Symbol('(') => {
+                    let expr = Self::parse(tokens, ending_mode!(')'))?;
+                    expect_symbol(tokens, ')')?;
+                    items.push(FlatUnary::Parenthesis(expr));
+                }
                 TokenType::Identifier => {
                     let identifier = Identifier::parse(token, tokens)?;
                     items.push(FlatUnary::Value(Unary::Identifier(identifier)));
@@ -163,7 +188,7 @@ impl Expression {
                     )?;
                     items.push(FlatUnary::Value(Unary::NumericLiteral(v, token.position())));
                 }
-                TokenType::StringLiteral(_) => {
+                TokenType::StringLiteral(qt) => {
                     let str = match token.string_literal() {
                         Ok((s, _t)) => s.into_owned(),
                         Err(err) => {
@@ -188,10 +213,38 @@ impl Expression {
                             return Err(err);
                         }
                     };
-                    items.push(FlatUnary::Value(Unary::StringLiteral(
-                        str,
-                        token.position(),
-                    )));
+                    match qt {
+                        QuoteType::SingleQuote => match str.chars().count() {
+                            0 => {
+                                return Err(CompileError::invalid_literal(
+                                    "empty character literal",
+                                    token.position(),
+                                ));
+                            }
+                            1 => items.push(FlatUnary::Value(Unary::CharLiteral(
+                                str.chars().next().unwrap(),
+                                token.position(),
+                            ))),
+                            _ => {
+                                return Err(CompileError::invalid_literal(
+                                    "character literal may only contain one codepoint",
+                                    token.position(),
+                                ));
+                            }
+                        },
+                        QuoteType::DoubleQuote => {
+                            items.push(FlatUnary::Value(Unary::StringLiteral(
+                                str.into_boxed_str(),
+                                token.position(),
+                            )));
+                        }
+                        QuoteType::BackQuote => {
+                            return Err(CompileError::invalid_literal(
+                                "not yet implemented",
+                                token.position(),
+                            ))
+                        }
+                    }
                 }
                 TokenType::Keyword(keyword) => {
                     if keyword.is_constant_value() {
@@ -247,6 +300,10 @@ impl Expression {
                     let _ = tokens.expect_symbol(',');
                 }
                 items.push(FlatUnary::Invoke(params.into_boxed_slice()));
+            } else if tokens.expect_keyword(Keyword::As).is_ok() {
+                let position = tokens.peek_last().unwrap().position();
+                let target = TypeDescriptor::expect(tokens)?;
+                items.push(FlatUnary::Assertion(target, position));
             } else {
                 break;
             }
@@ -285,11 +342,12 @@ impl Expression {
         let position_end = tokens.peek().unwrap().position().start();
         let token_position = TokenPosition::new(position_start as u32, position_end as u32);
 
-        if let Some(allowed_ending) = allowed_ending {
-            if !allowed_ending.contains(&TokenType::NewLine) {
-                tokens.skip_ignorable();
-            }
+        if ending_tokens.contains(&TokenType::NewLine) {
+            Self::skip_blank(tokens);
+        } else {
+            tokens.skip_ignorable();
         }
+
         let token = tokens.peek().unwrap();
         if ending_tokens.is_empty() {
             Ok((items, token_position))
@@ -387,6 +445,13 @@ impl Expression {
                         .ok_or(CompileError::out_of_value_stack(position))?;
                     items.push(Unary::Invoke(Box::new(caller), params));
                 }
+
+                FlatUnary::Assertion(type_desc, position) => {
+                    let value = items
+                        .pop()
+                        .ok_or(CompileError::out_of_value_stack(position))?;
+                    items.push(Unary::Assertion(Box::new(value), type_desc, position))
+                }
             }
         }
         if items.len() != 1 {
@@ -481,12 +546,16 @@ impl core::fmt::Debug for Unary {
             Self::Unary(op, _, value) => f.debug_tuple(&format!("{:?}", op)).field(value).finish(),
             Self::NumericLiteral(arg0, _) => f.debug_tuple("NumericLiteral").field(arg0).finish(),
             Self::StringLiteral(arg0, _) => f.debug_tuple("StringLiteral").field(arg0).finish(),
+            Self::CharLiteral(arg0, _) => f.debug_tuple("CharLiteral").field(arg0).finish(),
             Self::Binary(op, _, lhs, rhs) => f
                 .debug_tuple(&format!("{:?}", op))
                 .field(lhs)
                 .field(rhs)
                 .finish(),
             Self::Identifier(identifier) => write!(f, "Identifier({:?})", identifier.as_str()),
+            Self::Assertion(arg0, arg1, _) => {
+                f.debug_tuple("Assertion").field(arg0).field(arg1).finish()
+            }
         }
     }
 }
@@ -499,7 +568,9 @@ impl Unary {
             | Unary::Unary(_, position, _)
             | Unary::NumericLiteral(_, position)
             | Unary::StringLiteral(_, position)
-            | Unary::Binary(_, position, _, _) => *position,
+            | Unary::CharLiteral(_, position)
+            | Unary::Binary(_, position, _, _)
+            | Unary::Assertion(_, _, position) => *position,
 
             Unary::Parenthesis(expr) | Unary::Subscript(_, expr) => expr.position(),
 
@@ -531,28 +602,28 @@ impl Unary {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnaryOperator {
-    /// "+"
+    /// "+ A"
     Plus,
-    /// "-"
+    /// "- A"
     Minus,
-    /// "!"
+    /// "! A"
     LogicalNot,
-    /// "~"
+    /// "~ A"
     BitNot,
 
-    /// "++A"
+    /// "++ A"
     PreIncrement,
-    /// "--A"
+    /// "-- A"
     PreDecrement,
 
-    /// "A++"
+    /// "A ++"
     PostIncrement,
-    /// "A--"
+    /// "A --"
     PostDecrement,
 
-    /// "&A"
+    /// "& A"
     Ref,
-    /// "*A"
+    /// "* A"
     Deref,
 }
 
@@ -631,75 +702,75 @@ impl UnaryOperator {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinaryOperator {
-    /// "="
+    /// A `=` B
     Assign,
-    /// "+="
+    /// A `+=` B
     AssignAdd,
-    /// "-="
+    /// A `-=` B
     AssignSub,
-    /// "*="
+    /// A `*=` B
     AssignMul,
-    /// "/="
+    /// A `/=` B
     AssignDiv,
-    /// "%="
+    /// A `%=` B
     AssignRem,
-    /// "&="
+    /// A `&=` B
     AssignBitAnd,
-    /// "|="
+    /// A `|=` B
     AssignBitOr,
-    /// "^="
+    /// A `^=` B
     AssignBitXor,
-    /// "<<="
+    /// A `<<=` B
     AssignShl,
-    /// ">>="
+    /// A `>>=` B
     AssignShr,
 
-    /// "&&"
+    /// A `&&` B
     LogicalAnd,
-    /// "||"
+    /// A `||` B
     LogicalOr,
-    /// "==="
+    /// A `===` B
     Identical,
-    /// "!=="
+    /// A `!==` B
     NotIdentical,
 
-    /// "=="
+    /// A `==` B
     Eq,
-    /// "!="
+    /// A `!=` B
     Ne,
-    /// "<"
+    /// A `<` B
     Lt,
-    /// ">"
+    /// A `>` B
     Gt,
-    /// "<="
+    /// A `<=` B
     Le,
-    /// ">="
+    /// A `>=` B
     Ge,
 
-    /// "+"
+    /// A `+` B
     Add,
-    /// "-"
+    /// A `-` B
     Sub,
-    /// "*"
+    /// A `*` B
     Mul,
-    /// "/"
+    /// A `/` B
     Div,
-    /// "%"
+    /// A `%` B
     Rem,
 
-    /// "&"
+    /// A `&` B
     BitAnd,
-    /// "|"
+    /// A `|` B
     BitOr,
-    /// "^"
+    /// A `^` B
     BitXor,
 
-    /// "<<"
+    /// A `<<` B
     Shl,
-    /// ">>"
+    /// A `>>` B
     Shr,
 
-    /// "**"
+    /// A `**` B
     Exponentiation,
 }
 

@@ -10,26 +10,19 @@ use toyir::Primitive;
 
 pub mod function;
 pub mod index;
+// pub mod string;
 
 pub const BUILTIN_BOOLEAN: &str = "boolean";
-
-pub const BUILTIN_ISIZE: &str = "isize";
-
-pub const BUILTIN_USIZE: &str = "usize";
-
-pub const BUILTIN_INT: &str = "int";
-
-pub const BUILTIN_UINT: &str = "uint";
-
-pub const BUILTIN_NUMBER: &str = "number";
-
 pub const BUILTIN_CHAR: &str = "char";
-
-pub const BUILTIN_STRING: &str = "string";
-
-pub const BUILTIN_VOID: &str = "void";
-
+pub const BUILTIN_HANDLE: &str = "__builtin_handle";
+pub const BUILTIN_INT: &str = "int";
+pub const BUILTIN_ISIZE: &str = "isize";
 pub const BUILTIN_NEVER: &str = "never";
+pub const BUILTIN_NUMBER: &str = "number";
+pub const BUILTIN_STRING: &str = "string";
+pub const BUILTIN_UINT: &str = "uint";
+pub const BUILTIN_USIZE: &str = "usize";
+pub const BUILTIN_VOID: &str = "void";
 
 /// ToyScript Type System
 #[derive(Debug)]
@@ -68,6 +61,8 @@ impl TypeSystem {
             system.types.insert(desc.identifier().to_string(), desc);
         }
 
+        system.set_use(32).unwrap();
+
         system
             .make_primitive_alias(BUILTIN_NEVER, Primitive::Void)
             .unwrap();
@@ -81,14 +76,16 @@ impl TypeSystem {
             .make_primitive_alias(BUILTIN_BOOLEAN, Primitive::Bool)
             .unwrap();
 
-        system.set_use(32).unwrap();
+        // system.make_reference(
+        //     &Identifier::new(BUILTIN_HANDLE, TokenPosition::empty()),
+        //     &system.builtin_void(),
+        // )?;
+        // system.make_simple_alias(BUILTIN_HANDLE, BUILTIN_USIZE)?;
 
-        system
-            .make_reference(
-                &Identifier::new(BUILTIN_STRING, TokenPosition::empty()),
-                &system.builtin_void(),
-            )
-            .unwrap();
+        system.make_reference(
+            &Identifier::new(BUILTIN_STRING, TokenPosition::empty()),
+            &system.builtin_void(),
+        )?;
 
         let mut will_waiting_ids = Vec::new();
         let mut waiting_type_list = Vec::new();
@@ -223,6 +220,16 @@ impl TypeSystem {
     }
 
     #[inline]
+    pub fn builtin_char(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_CHAR).map(|v| v.clone()).unwrap()
+    }
+
+    #[inline]
+    pub fn builtin_handle(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_HANDLE).map(|v| v.clone()).unwrap()
+    }
+
+    #[inline]
     pub fn builtin_int(&self) -> Arc<TypeDescriptor> {
         self.get(BUILTIN_INT).map(|v| v.clone()).unwrap()
     }
@@ -243,13 +250,23 @@ impl TypeSystem {
     }
 
     #[inline]
-    pub fn builtin_void(&self) -> Arc<TypeDescriptor> {
-        self.get(BUILTIN_VOID).map(|v| v.clone()).unwrap()
+    pub fn builtin_never(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_NEVER).map(|v| v.clone()).unwrap()
     }
 
     #[inline]
-    pub fn builtin_never(&self) -> Arc<TypeDescriptor> {
-        self.get(BUILTIN_NEVER).map(|v| v.clone()).unwrap()
+    pub fn builtin_number(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_NUMBER).map(|v| v.clone()).unwrap()
+    }
+
+    #[inline]
+    pub fn builtin_string(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_STRING).map(|v| v.clone()).unwrap()
+    }
+
+    #[inline]
+    pub fn builtin_void(&self) -> Arc<TypeDescriptor> {
+        self.get(BUILTIN_VOID).map(|v| v.clone()).unwrap()
     }
 
     #[inline]
@@ -300,6 +317,13 @@ impl TypeSystem {
     }
 
     #[inline]
+    fn _make_simple_alias(&mut self, identifier: &str, target: &str) -> Result<(), CompileError> {
+        self.make_alias(
+            &Identifier::new(identifier, TokenPosition::empty()),
+            &ast::class::TypeDescriptor::Simple(Identifier::new(target, TokenPosition::empty())),
+        )
+    }
+
     pub fn make_alias(
         &mut self,
         identifier: &Identifier,
@@ -309,7 +333,7 @@ impl TypeSystem {
             return Err(CompileError::duplicate_identifier(identifier));
         }
         if let Some(desc) = self.from_ast(type_desc) {
-            if desc.is_special() {
+            if desc.is_special_type() {
                 return Err(CompileError::invalid_type(&type_desc.identifier()));
             }
             let desc = TypeDescriptor::make_alias(identifier.as_str(), &desc);
@@ -433,11 +457,6 @@ impl TypeSystem {
         }
     }
 
-    // #[inline]
-    // pub fn canonical_opt(&self, ty: Option<&Arc<TypeDescriptor>>) -> Option<Arc<TypeDescriptor>> {
-    //     ty.filter(|v| !v.is_void()).map(|v| v.clone())
-    // }
-
     #[inline]
     pub fn canonical(&self, ty: Option<&Arc<TypeDescriptor>>) -> Arc<TypeDescriptor> {
         ty.map(|v| v.clone()).unwrap_or(self.builtin_void())
@@ -459,6 +478,17 @@ pub trait Resolve<T: ?Sized> {
     fn resolve(&self, v: &T) -> Option<Arc<TypeDescriptor>>;
 
     fn resolve_primitive(&self, v: &T) -> Option<Primitive>;
+}
+
+impl Resolve<ast::class::TypeDescriptor> for TypeSystem {
+    fn resolve(&self, desc: &ast::class::TypeDescriptor) -> Option<Arc<TypeDescriptor>> {
+        self.resolve(desc.as_string().as_str())
+    }
+
+    fn resolve_primitive(&self, desc: &ast::class::TypeDescriptor) -> Option<Primitive> {
+        self.resolve(desc)
+            .and_then(|ref v| self.resolve_primitive(v))
+    }
 }
 
 impl Resolve<str> for TypeSystem {
@@ -539,7 +569,7 @@ impl TypeDescriptor {
     }
 
     #[inline]
-    pub fn primitive_type(&self) -> Option<Primitive> {
+    fn primitive_type(&self) -> Option<Primitive> {
         match self.kind() {
             TypeKind::Primitive(v) => Some(*v),
             TypeKind::Alias(v) => v.primitive_type(),
@@ -551,11 +581,6 @@ impl TypeDescriptor {
     pub fn is_refernce(&self) -> bool {
         matches!(self.kind, TypeKind::Reference(_))
     }
-
-    // #[inline]
-    // pub fn is_bool(&self) -> bool {
-    //     self.identifier() == BUILTIN_BOOL
-    // }
 
     #[inline]
     pub fn is_boolean(&self) -> bool {
@@ -573,7 +598,7 @@ impl TypeDescriptor {
     }
 
     #[inline]
-    pub fn is_special(&self) -> bool {
+    pub fn is_special_type(&self) -> bool {
         self.is_void() || self.is_never()
     }
 

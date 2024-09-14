@@ -7,6 +7,7 @@ use ast::{
     try_expect_module,
     types::TypeUse,
 };
+use code_tir::FromToyIR;
 use ir::{index::*, Module};
 use leb128::{Leb128Writer, WriteLeb128};
 use toyir::CodeStreamIter;
@@ -106,7 +107,7 @@ impl Code {
     ) -> Result<(), AssembleError> {
         match self {
             Code::Binary(_) => Ok(()),
-            Code::Source(src) => Self::_assemble(
+            Code::Source(src) => Self::assemble_from_source(
                 &mut src.tokens,
                 module,
                 results,
@@ -116,14 +117,14 @@ impl Code {
             )
             .map(|bytes| *self = Code::Binary(Binary { bytes })),
             Code::ToyIr(tir) => {
-                code_tir::TirToWasm::assemble(&tir.0, module, results, locals, params_and_locals)
+                FromToyIR::assemble(&tir.0, module, results, locals, params_and_locals)
                     .map(|bytes| *self = Code::Binary(Binary { bytes }))
             }
         }
     }
 
     /// Perform assembly from source code
-    fn _assemble(
+    fn assemble_from_source(
         tokens: &mut TokenStream<Keyword>,
         module: &Module,
         results: &[ValType],

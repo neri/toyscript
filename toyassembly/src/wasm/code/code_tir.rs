@@ -10,9 +10,9 @@ use wasm::opcode::WasmOpcode;
 
 use toyir::Op as TIR;
 
-pub(super) struct TirToWasm;
+pub(super) struct FromToyIR;
 
-impl TirToWasm {
+impl FromToyIR {
     /// Perform assembly from toyir
     pub fn assemble(
         src: &[u32],
@@ -177,7 +177,7 @@ impl TirToWasm {
                     value_stack.push(ssa_index, local_type);
 
                     writer.write(WasmOpcode::LocalGet).unwrap();
-                    writer.write(local_idx as i32).unwrap();
+                    writer.write(local_idx as u32).unwrap();
                 }
                 TIR::LocalSet => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
@@ -186,7 +186,7 @@ impl TirToWasm {
                     value_stack.expect_type(ssa_index, local_type)?;
 
                     writer.write(WasmOpcode::LocalSet).unwrap();
-                    writer.write(local_idx as i32).unwrap();
+                    writer.write(local_idx as u32).unwrap();
                 }
                 TIR::LocalTee => {
                     let result = Self::get_params(tir.params(), 0)?;
@@ -197,7 +197,7 @@ impl TirToWasm {
                     value_stack.push(result, local_type);
 
                     writer.write(WasmOpcode::LocalTee).unwrap();
-                    writer.write(local_idx as i32).unwrap();
+                    writer.write(local_idx as u32).unwrap();
                 }
 
                 // binop
@@ -332,12 +332,12 @@ impl TirToWasm {
 
                         (TIR::Inc, ValType::F64) => {
                             writer.write(WasmOpcode::F64Const).unwrap();
-                            writer.write(1.0f32).unwrap();
+                            writer.write(1.0f64).unwrap();
                             writer.write(WasmOpcode::F64Add).unwrap();
                         }
                         (TIR::Dec, ValType::F64) => {
                             writer.write(WasmOpcode::F64Const).unwrap();
-                            writer.write(1.0f32).unwrap();
+                            writer.write(1.0f64).unwrap();
                             writer.write(WasmOpcode::F64Sub).unwrap();
                         }
 

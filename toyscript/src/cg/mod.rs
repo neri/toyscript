@@ -36,23 +36,24 @@ impl CodeGen {
                     if let Some(import_from) = func_decl.import_from() {
                         let mut params = Vec::new();
                         for param in func_desc.param_types() {
-                            let primitive_type =
-                                param.primitive_type().ok_or(CompileError::invalid_type(
-                                    &Identifier::new(param.identifier(), TokenPosition((0, 0))),
-                                ))?;
+                            let primitive_type = types.resolve_primitive(param).ok_or(
+                                CompileError::invalid_type(&Identifier::new(
+                                    param.identifier(),
+                                    TokenPosition((0, 0)),
+                                )),
+                            )?;
                             params.push(primitive_type);
                         }
 
                         let mut results = Vec::new();
                         let result_type = func_desc.result_type();
-                        if !result_type.is_special() {
-                            let primitive_type =
-                                result_type
-                                    .primitive_type()
-                                    .ok_or(CompileError::invalid_type(&Identifier::new(
-                                        result_type.identifier(),
-                                        TokenPosition((0, 0)),
-                                    )))?;
+                        if !result_type.is_special_type() {
+                            let primitive_type = types.resolve_primitive(result_type).ok_or(
+                                CompileError::invalid_type(&Identifier::new(
+                                    result_type.identifier(),
+                                    TokenPosition((0, 0)),
+                                )),
+                            )?;
                             results.push(primitive_type);
                         }
 
@@ -115,8 +116,9 @@ impl CodeGen {
         let mut builder = toyir::Function::new(
             signature,
             exports,
-            return_type
-                .primitive_type()
+            scope
+                .types()
+                .resolve_primitive(&return_type)
                 .map(|v| (return_type.identifier(), v)),
         )?;
 
@@ -126,13 +128,14 @@ impl CodeGen {
                 .inferred_type()
                 .strict_type()
                 .ok_or(CompileError::could_not_infer(var.identifier()))?;
-            let primitive_type =
-                infered_type
-                    .primitive_type()
-                    .ok_or(CompileError::invalid_type(&Identifier::new(
-                        infered_type.identifier(),
-                        TokenPosition((0, 0)),
-                    )))?;
+            let primitive_type = scope
+                .types()
+                .resolve_primitive(infered_type)
+                .ok_or(CompileError::invalid_type(&Identifier::new(
+                    infered_type.identifier(),
+                    TokenPosition((0, 0)),
+                )))
+                .unwrap();
             var.set_index(builder.declare_param(
                 &var.identifier().as_string(),
                 infered_type.identifier(),
@@ -179,7 +182,9 @@ impl CodeGen {
                 var_desc.index(),
                 &var_desc.identifier().as_string(),
                 type_desc.identifier(),
-                type_desc.primitive_type().unwrap_or(Primitive::Void),
+                types
+                    .resolve_primitive(type_desc)
+                    .unwrap_or(Primitive::Void),
                 var_desc.is_mutable(),
             )?;
         }
@@ -206,7 +211,7 @@ impl CodeGen {
                     .get(type_desc.identifier().as_str())
                     .ok_or(CompileError::identifier_not_found(type_desc.identifier()))
                     .and_then(|v| {
-                        if v.is_special() {
+                        if v.is_special_type() {
                             Err(CompileError::invalid_type(type_desc.identifier()))
                         } else {
                             Ok(Some(v))
@@ -404,7 +409,7 @@ impl CodeGen {
                             let expr_type = scope.types().canonical(
                                 Self::process_expression(asm, expr, None, &scope)?.as_ref(),
                             );
-                            if !expr_type.is_special() {
+                            if !expr_type.is_special_type() {
                                 asm.ir_drop()?;
                             }
                         }
@@ -444,7 +449,7 @@ impl CodeGen {
                     let expr_type = scope.types().canonical(
                         Self::process_expression(asm, &for_statement.step, None, &scope)?.as_ref(),
                     );
-                    if !expr_type.is_special() {
+                    if !expr_type.is_special_type() {
                         asm.ir_drop()?;
                     }
 
@@ -458,7 +463,7 @@ impl CodeGen {
                         .types()
                         .canonical(Self::process_expression(asm, expr, None, scope)?.as_ref());
 
-                    if !expr_type.is_special() {
+                    if !expr_type.is_special_type() {
                         asm.ir_drop()?;
                     }
                     if expr_type.is_never() {
@@ -572,6 +577,23 @@ impl CodeGen {
                 Ok((
                     Unary::Parenthesis(Expression::from_uanary(Box::new(unary.clone()))),
                     inferred_type,
+                ))
+            }
+
+            Unary::Assertion(ref value, ref type_desc, position) => {
+                let target = InferredType::Inferred(
+                    scope
+                        .types()
+                        .resolve(type_desc)
+                        .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
+                );
+
+                let (value, _inferred_to) =
+                    Self::infer_unary(&InferredType::Unknown, value, scope)?;
+
+                Ok((
+                    Unary::Assertion(Box::new(value), type_desc.clone(), *position),
+                    target,
                 ))
             }
 
@@ -713,7 +735,17 @@ impl CodeGen {
                 Ok((item.clone(), inferred_type))
             }
 
-            Unary::Subscript(_, _) | Unary::Member(_, _) | Unary::StringLiteral(_, _) => {
+            Unary::CharLiteral(_, _) => Ok((
+                item.clone(),
+                InferredType::Inferred(scope.types().builtin_char()),
+            )),
+
+            Unary::StringLiteral(_, _) => Ok((
+                item.clone(),
+                InferredType::Inferred(scope.types().builtin_string()),
+            )),
+
+            Unary::Subscript(_, _) | Unary::Member(_, _) => {
                 Err(CompileError::todo(None, item.position()))
             }
 
@@ -727,6 +759,7 @@ impl CodeGen {
 
                     Ok((item.clone(), inferred))
                 }
+
                 _ => Err(CompileError::todo(None, *position)),
             },
         }
@@ -754,6 +787,19 @@ impl CodeGen {
 
             Unary::Parenthesis(expr) => Self::generate_unary(asm, expr.item(), scope),
 
+            Unary::Assertion(ref value, ref type_desc, _position) => {
+                let target = InferredType::Inferred(
+                    scope
+                        .types()
+                        .resolve(type_desc)
+                        .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
+                );
+
+                Self::generate_unary(asm, value, scope)?;
+
+                Ok(target)
+            }
+
             Unary::Unary(op, position, ref value) => match op {
                 UnaryOperator::Plus => Self::generate_unary(asm, value, scope),
 
@@ -762,7 +808,7 @@ impl CodeGen {
                     let type2 = result_type
                         .optimistic_type()
                         .ok_or(CompileError::could_not_infer2(item.position()))?;
-                    if type2.is_special() {
+                    if type2.is_special_type() {
                         return Err(CompileError::invalid_type2(
                             type2.identifier(),
                             item.position(),
@@ -780,7 +826,7 @@ impl CodeGen {
                     let type2 = result_type
                         .optimistic_type()
                         .ok_or(CompileError::could_not_infer2(item.position()))?;
-                    if type2.is_special() {
+                    if type2.is_special_type() {
                         return Err(CompileError::invalid_type2(
                             type2.identifier(),
                             item.position(),
@@ -916,7 +962,7 @@ impl CodeGen {
                         return Err(CompileError::cannot_assign(identifier));
                     }
                     if let Some(inferred_type) = var_desc.inferred_type().optimistic_type() {
-                        if inferred_type.is_special() {
+                        if inferred_type.is_special_type() {
                             return Err(CompileError::invalid_type(&Identifier::new(
                                 inferred_type.identifier(),
                                 rhs.position(),
@@ -1030,6 +1076,10 @@ impl CodeGen {
                 }
             },
 
+            Unary::CharLiteral(c, _position) => {
+                asm.ir_i32_const(*c as i32);
+                Ok(InferredType::Inferred(scope.types().builtin_char()))
+            }
             Unary::StringLiteral(_, _position) => {
                 // TODO:
                 return Err(CompileError::todo(None, item.position()));
@@ -1072,7 +1122,7 @@ impl CodeGen {
                 asm.ir_call(
                     func_desc.function_index().as_usize(),
                     func_desc.param_types().len(),
-                    if func_desc.result_type().is_special() {
+                    if func_desc.result_type().is_special_type() {
                         0
                     } else {
                         1

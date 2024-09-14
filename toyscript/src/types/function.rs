@@ -28,7 +28,7 @@ impl FunctionDescriptor {
         let mut param_types = Vec::new();
         for param in decl.parameters() {
             if let Some(v) = types.from_ast(param.type_desc()) {
-                if v.is_special() {
+                if v.is_special_type() {
                     return Err(CompileError::invalid_type(param.type_desc().identifier()));
                 }
                 param_types.push(v.clone());

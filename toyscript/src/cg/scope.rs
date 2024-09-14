@@ -208,7 +208,7 @@ impl VariableDescriptor {
         inferred_type: &Arc<TypeDescriptor>,
         position: TokenPosition,
     ) -> Result<(), CompileError> {
-        if inferred_type.is_special() {
+        if inferred_type.is_special_type() {
             return Err(CompileError::invalid_type(&Identifier::new(
                 inferred_type.identifier(),
                 position,

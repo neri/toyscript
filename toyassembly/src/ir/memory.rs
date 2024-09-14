@@ -35,7 +35,9 @@ impl Memories {
 
     pub(super) fn process_tir(module: &mut Module) -> Result<(), AssembleError> {
         // default memory
-        module.memories.0.push(Memory { min: 1, max: None });
+        if module.memories.0.len() == 0 {
+            module.memories.0.push(Memory { min: 1, max: None });
+        }
 
         Ok(())
     }
