@@ -2,6 +2,7 @@
 
 mod _keyword;
 pub use _keyword::*;
+use token::Token;
 
 impl Keyword {
     pub fn modifiers() -> &'static [Self] {
@@ -117,6 +118,39 @@ impl ModifierFlag {
                 ""
             }
         })
+    }
+
+    pub fn combined<'a>(iter: impl Iterator<Item = &'a Self>) -> Self {
+        let mut result = Self::empty();
+        for item in iter {
+            result.insert(*item);
+        }
+        result
+    }
+
+    pub fn from_tokens(tokens: &[Token<Keyword>], accept: &[Self]) -> Result<Self, Token<Keyword>> {
+        let mut result = Self::empty();
+        let accept = Self::combined(accept.iter());
+        for token in tokens {
+            let keyword = token.clone().into_keyword().unwrap();
+            let new_value = match keyword.keyword() {
+                Keyword::Async => Self::ASYNC,
+                Keyword::Export => Self::EXPORT,
+                Keyword::Import => Self::IMPORT,
+                Keyword::Public => Self::PUBLIC,
+                Keyword::Private => Self::PRIVATE,
+                Keyword::Protected => Self::PROTECTED,
+                Keyword::Static => Self::STATIC,
+                Keyword::Declare => Self::DECLARE,
+                _ => return Err(token.clone()),
+            };
+            if (new_value.0 & accept.0) != new_value.0 {
+                return Err(token.clone());
+            }
+            result.insert(new_value);
+        }
+
+        Ok(result)
     }
 
     pub fn from_keywords(keywords: impl Iterator<Item = Keyword>) -> Result<Self, Keyword> {

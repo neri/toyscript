@@ -81,9 +81,11 @@ fn token_numer() {
 
 #[test]
 fn token_float() {
-    let str = b"0. 1. 123..456 0.e 0.123456789 1.0123456789 1.0e 1.0e+ 1.0e- 1.0e+123456789 1.0e-123456789 1.0e123456789";
+    let str = b"0. 1. 123..456 0.e 0.123456789 98765.43210 1.0e 1.0e+ 1.0e- 1.234567e+89 1.234567e-89 1.234567e89";
     let tokens = Tokenizer::with_slice(str, Keyword::resolver).unwrap();
     let mut tokens = tokens.stream();
+
+    let error_rate = 5;
 
     let number = tokens.expect(&[TokenType::BrokenNumber]).unwrap();
     assert_eq!(number.source(), "0.");
@@ -103,9 +105,11 @@ fn token_float() {
 
     let number = tokens.expect(&[TokenType::FloatingNumberLiteral]).unwrap();
     assert_eq!(number.source(), "0.123456789");
+    assert_eq!(number.try_parse_float().unwrap(), 0.123456789);
 
     let number = tokens.expect(&[TokenType::FloatingNumberLiteral]).unwrap();
-    assert_eq!(number.source(), "1.0123456789");
+    assert_eq!(number.source(), "98765.43210");
+    assert_eq!(number.try_parse_float().unwrap(), 98765.43210);
 
     let number = tokens.expect(&[TokenType::BrokenNumber]).unwrap();
     assert_eq!(number.source(), "1.0e");
@@ -117,13 +121,16 @@ fn token_float() {
     assert_eq!(number.source(), "1.0e-");
 
     let number = tokens.expect(&[TokenType::FloatingNumberLiteral]).unwrap();
-    assert_eq!(number.source(), "1.0e+123456789");
+    assert_eq!(number.source(), "1.234567e+89");
+    assert_almost_eq(number.try_parse_float().unwrap(), 1.234567e+89, error_rate);
 
     let number = tokens.expect(&[TokenType::FloatingNumberLiteral]).unwrap();
-    assert_eq!(number.source(), "1.0e-123456789");
+    assert_eq!(number.source(), "1.234567e-89");
+    assert_almost_eq(number.try_parse_float().unwrap(), 1.234567e-89, error_rate);
 
     let number = tokens.expect(&[TokenType::FloatingNumberLiteral]).unwrap();
-    assert_eq!(number.source(), "1.0e123456789");
+    assert_eq!(number.source(), "1.234567e89");
+    assert_almost_eq(number.try_parse_float().unwrap(), 1.234567e89, error_rate);
 }
 
 #[test]
@@ -378,6 +385,36 @@ impl Keyword {
             "function" => Some(Self::Function),
             "return" => Some(Self::Return),
             _ => None,
+        }
+    }
+}
+
+#[track_caller]
+fn assert_almost_eq(lhs: f64, rhs: f64, error_rate: u64) {
+    match (lhs.is_nan(), rhs.is_nan()) {
+        // If both are NaN, ok
+        (true, true) => return,
+        // Error if only one of them is NaN
+        (true, false) | (false, true) => {
+            panic!(
+                "assertion `left == right` failed
+  left: {lhs}
+ right: {rhs}
+"
+            );
+        }
+        (false, false) => {
+            let mask = 0xFFFF_FFFF_FFFF_FF00;
+            if (lhs.to_bits() & mask) != (rhs.to_bits() & mask)
+                || lhs.to_bits().abs_diff(rhs.to_bits()) > error_rate
+            {
+                panic!(
+                    "assertion `left == right` failed
+  left: {lhs}
+ right: {rhs}
+"
+                );
+            }
         }
     }
 }

@@ -22,6 +22,7 @@ fn usage() -> ! {
 enum OperationMode {
     Default,
     ShowAst,
+    ShowTir,
     ToRun,
 }
 
@@ -39,6 +40,13 @@ fn main() {
                 "-ast" => {
                     if mode == OperationMode::Default {
                         mode = OperationMode::ShowAst;
+                    } else {
+                        panic!("too many option: {}", arg)
+                    }
+                }
+                "-tir" => {
+                    if mode == OperationMode::Default {
+                        mode = OperationMode::ShowTir;
                     } else {
                         panic!("too many option: {}", arg)
                     }
@@ -91,6 +99,15 @@ fn main() {
         }
         OperationMode::ShowAst => {
             match ToyScript::explain_ast(path_input.as_str(), src.into_bytes()) {
+                Ok(v) => println!("{}", v),
+                Err(err) => {
+                    eprintln!("{}", err);
+                    process::exit(1)
+                }
+            }
+        }
+        OperationMode::ShowTir => {
+            match ToyScript::explain_toyir(path_input.as_str(), src.into_bytes()) {
                 Ok(v) => println!("{}", v),
                 Err(err) => {
                     eprintln!("{}", err);

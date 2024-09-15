@@ -2,7 +2,7 @@
 
 use super::Identifier;
 use crate::{keyword::Keyword, *};
-use ast::{class::TypeDescriptor, integer::Integer};
+use ast::{class::TypeDescriptor, float::Float, integer::Integer};
 use core::ops::ControlFlow;
 use token::{QuoteType, StringLiteralError, TokenPosition, TokenStream};
 
@@ -22,6 +22,9 @@ pub enum Unary {
 
     /// Numeric Literal
     NumericLiteral(Integer, TokenPosition),
+
+    /// Floating Point Literal
+    FloatingPointLiteral(Float, TokenPosition),
 
     /// String Literal
     StringLiteral(Box<str>, TokenPosition),
@@ -187,6 +190,15 @@ impl Expression {
                         CompileError::invalid_literal("Invalid number", token.position()),
                     )?;
                     items.push(FlatUnary::Value(Unary::NumericLiteral(v, token.position())));
+                }
+                TokenType::FloatingNumberLiteral => {
+                    let v = token.try_parse_float().map(Float::F64).map_err(|_e| {
+                        CompileError::invalid_literal("Invalid number", token.position())
+                    })?;
+                    items.push(FlatUnary::Value(Unary::FloatingPointLiteral(
+                        v,
+                        token.position(),
+                    )));
                 }
                 TokenType::StringLiteral(qt) => {
                     let str = match token.string_literal() {
@@ -545,6 +557,9 @@ impl core::fmt::Debug for Unary {
             Self::Constant(arg0, _) => write!(f, "{:#?}", arg0),
             Self::Unary(op, _, value) => f.debug_tuple(&format!("{:?}", op)).field(value).finish(),
             Self::NumericLiteral(arg0, _) => f.debug_tuple("NumericLiteral").field(arg0).finish(),
+            Self::FloatingPointLiteral(arg0, _) => {
+                f.debug_tuple("FloatingPointLiteral").field(arg0).finish()
+            }
             Self::StringLiteral(arg0, _) => f.debug_tuple("StringLiteral").field(arg0).finish(),
             Self::CharLiteral(arg0, _) => f.debug_tuple("CharLiteral").field(arg0).finish(),
             Self::Binary(op, _, lhs, rhs) => f
@@ -567,6 +582,7 @@ impl Unary {
             | Unary::Constant(_, position)
             | Unary::Unary(_, position, _)
             | Unary::NumericLiteral(_, position)
+            | Unary::FloatingPointLiteral(_, position)
             | Unary::StringLiteral(_, position)
             | Unary::CharLiteral(_, position)
             | Unary::Binary(_, position, _, _)

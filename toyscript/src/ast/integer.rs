@@ -17,7 +17,7 @@ macro_rules! integer_from_integer {
         impl From<$type> for Integer {
             #[inline]
             fn from(value: $type) -> Integer {
-                Integer::$case(value)
+                Self::$case(value)
             }
         }
     };
@@ -36,20 +36,20 @@ impl Integer {
     #[inline]
     pub fn primitive_type(&self) -> Primitive {
         match self {
-            Integer::I8(_) => Primitive::I8,
-            Integer::U8(_) => Primitive::U8,
-            Integer::I16(_) => Primitive::I16,
-            Integer::U16(_) => Primitive::U16,
-            Integer::I32(_) => Primitive::I32,
-            Integer::U32(_) => Primitive::U32,
-            Integer::I64(_) => Primitive::I64,
-            Integer::U64(_) => Primitive::U64,
+            Self::I8(_) => Primitive::I8,
+            Self::U8(_) => Primitive::U8,
+            Self::I16(_) => Primitive::I16,
+            Self::U16(_) => Primitive::U16,
+            Self::I32(_) => Primitive::I32,
+            Self::U32(_) => Primitive::U32,
+            Self::I64(_) => Primitive::I64,
+            Self::U64(_) => Primitive::U64,
         }
     }
 
-    pub fn try_convert_to(&self, target: Primitive) -> Result<Integer, ()> {
+    pub fn try_convert_to(&self, target: Primitive) -> Result<Self, ()> {
         match self {
-            Integer::I8(v) => match target {
+            Self::I8(v) => match target {
                 Primitive::I8 => Ok(*self),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => Ok(Self::I16(*v as i16)),
@@ -60,7 +60,7 @@ impl Integer {
                 Primitive::U64 => Ok(Self::U64(*v as u64)),
                 _ => Err(()),
             },
-            Integer::U8(v) => match target {
+            Self::U8(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => Ok(*self),
                 Primitive::I16 => Ok(Self::I16(*v as i16)),
@@ -71,7 +71,7 @@ impl Integer {
                 Primitive::U64 => Ok(Self::U64(*v as u64)),
                 _ => Err(()),
             },
-            Integer::I16(v) => match target {
+            Self::I16(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => Ok(*self),
@@ -82,7 +82,7 @@ impl Integer {
                 Primitive::U64 => Ok(Self::U64(*v as u64)),
                 _ => Err(()),
             },
-            Integer::U16(v) => match target {
+            Self::U16(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => (*v).try_into().map(|v| Self::I16(v)).map_err(|_| ()),
@@ -93,7 +93,7 @@ impl Integer {
                 Primitive::U64 => Ok(Self::U64(*v as u64)),
                 _ => Err(()),
             },
-            Integer::I32(v) => match target {
+            Self::I32(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => (*v).try_into().map(|v| Self::I16(v)).map_err(|_| ()),
@@ -104,7 +104,7 @@ impl Integer {
                 Primitive::U64 => Ok(Self::U64(*v as u64)),
                 _ => Err(()),
             },
-            Integer::U32(v) => match target {
+            Self::U32(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => (*v).try_into().map(|v| Self::I16(v)).map_err(|_| ()),
@@ -115,7 +115,7 @@ impl Integer {
                 Primitive::U64 => Ok(Self::U64(*v as u64)),
                 _ => Err(()),
             },
-            Integer::I64(v) => match target {
+            Self::I64(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => (*v).try_into().map(|v| Self::I16(v)).map_err(|_| ()),
@@ -126,7 +126,7 @@ impl Integer {
                 Primitive::U64 => (*v).try_into().map(|v| Self::U64(v)).map_err(|_| ()),
                 _ => Err(()),
             },
-            Integer::U64(v) => match target {
+            Self::U64(v) => match target {
                 Primitive::I8 => (*v).try_into().map(|v| Self::I8(v)).map_err(|_| ()),
                 Primitive::U8 => (*v).try_into().map(|v| Self::U8(v)).map_err(|_| ()),
                 Primitive::I16 => (*v).try_into().map(|v| Self::I16(v)).map_err(|_| ()),
@@ -173,27 +173,27 @@ impl Integer {
     #[inline]
     pub fn int_to_signed(&self, reverse_sign: bool) -> Result<Integer, Primitive> {
         match self {
-            Integer::I8(_) | Integer::I16(_) | Integer::I32(_) | Integer::I64(_) => Ok(*self),
-            Integer::U8(_) => self
+            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I64(_) => Ok(*self),
+            Self::U8(_) => self
                 .try_convert_to(Primitive::I8)
                 .map_err(|_| Primitive::I8),
-            Integer::U16(_) => self
+            Self::U16(_) => self
                 .try_convert_to(Primitive::I16)
                 .map_err(|_| Primitive::I16),
-            Integer::U32(_) => self
+            Self::U32(_) => self
                 .try_convert_to(Primitive::I32)
                 .map_err(|_| Primitive::I32),
-            Integer::U64(_) => self
+            Self::U64(_) => self
                 .try_convert_to(Primitive::I64)
                 .map_err(|_| Primitive::I64),
         }
         .map(|v| {
             if reverse_sign {
                 match v {
-                    Integer::I8(v) => Integer::I8(v.wrapping_neg()),
-                    Integer::I16(v) => Integer::I16(v.wrapping_neg()),
-                    Integer::I32(v) => Integer::I32(v.wrapping_neg()),
-                    Integer::I64(v) => Integer::I64(v.wrapping_neg()),
+                    Self::I8(v) => Self::I8(v.wrapping_neg()),
+                    Self::I16(v) => Self::I16(v.wrapping_neg()),
+                    Self::I32(v) => Self::I32(v.wrapping_neg()),
+                    Self::I64(v) => Self::I64(v.wrapping_neg()),
                     _ => unreachable!(),
                 }
             } else {
@@ -205,14 +205,14 @@ impl Integer {
     #[inline]
     pub fn is_zero(&self) -> bool {
         match self {
-            Integer::I8(v) => *v == 0,
-            Integer::U8(v) => *v == 0,
-            Integer::I16(v) => *v == 0,
-            Integer::U16(v) => *v == 0,
-            Integer::I32(v) => *v == 0,
-            Integer::U32(v) => *v == 0,
-            Integer::I64(v) => *v == 0,
-            Integer::U64(v) => *v == 0,
+            Self::I8(v) => *v == 0,
+            Self::U8(v) => *v == 0,
+            Self::I16(v) => *v == 0,
+            Self::U16(v) => *v == 0,
+            Self::I32(v) => *v == 0,
+            Self::U32(v) => *v == 0,
+            Self::I64(v) => *v == 0,
+            Self::U64(v) => *v == 0,
         }
     }
 }

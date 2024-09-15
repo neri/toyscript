@@ -3,6 +3,7 @@
 pub mod block;
 pub mod class;
 pub mod expression;
+pub mod float;
 pub mod function;
 pub mod identifier;
 pub mod integer;

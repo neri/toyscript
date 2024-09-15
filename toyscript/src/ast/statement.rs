@@ -156,6 +156,9 @@ impl Statement {
                         }
 
                         Keyword::Declare => {
+                            if !modifiers.is_empty() {
+                                return Err(CompileError::unexpected_token(&token));
+                            }
                             let kind = tokens.next_non_blank();
                             match kind.token_type() {
                                 TokenType::Keyword(keyword) => match keyword {

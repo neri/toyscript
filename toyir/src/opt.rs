@@ -10,10 +10,16 @@ use error::OptimizeError;
 pub struct MinimalCodeOptimizer {
     positions: Vec<ArrayIndex>,
     codes: Vec<u32>,
+    params: Vec<LocalVarDescriptor>,
+    locals: Vec<LocalVarDescriptor>,
 }
 
 impl MinimalCodeOptimizer {
-    pub fn optimize(codes: Vec<u32>) -> Result<Vec<u32>, OptimizeError> {
+    pub fn optimize(
+        codes: Vec<u32>,
+        params: &[LocalVarDescriptor],
+        locals: &[LocalVarDescriptor],
+    ) -> Result<Vec<u32>, OptimizeError> {
         let mut positions = Vec::with_capacity(codes.len() / 4);
         let mut index = 0;
         while let Some(len_opc) = codes.get(index) {
@@ -26,7 +32,12 @@ impl MinimalCodeOptimizer {
             index += len;
         }
 
-        let mut optimizer = Self { codes, positions };
+        let mut optimizer = Self {
+            codes,
+            positions,
+            params: params.to_vec(),
+            locals: locals.to_vec(),
+        };
         optimizer._optimize()?;
 
         Ok(optimizer.codes)
@@ -169,6 +180,45 @@ impl MinimalCodeOptimizer {
                         }
                     }
 
+                    Op::LocalSet => {
+                        let operand_ci = CodeIndex(self.param(base, len, 1)?);
+                        let operand = self.array_index(operand_ci)?;
+                        let const_val = self.get_const(operand)?;
+                        if let Some(const_val) = const_val {
+                            let local_index = self.param(base, len, 2)?;
+                            let var_desc = self.get_local_mut(local_index as usize).unwrap();
+                            if var_desc.is_const() {
+                                var_desc.assignment = Some(const_val);
+                                if self.chain_drop(operand_ci)? {
+                                    self.replace_nop(base)?;
+                                }
+                            }
+                        }
+                    }
+
+                    Op::LocalTee => {
+                        let operand = self.array_index(CodeIndex(self.param(base, len, 3)?))?;
+                        let const_val = self.get_const(operand)?;
+                        if let Some(const_val) = const_val {
+                            let local_index = self.param(base, len, 2)?;
+                            let var_desc = self.get_local_mut(local_index as usize).unwrap();
+                            if var_desc.is_const() {
+                                var_desc.assignment = Some(const_val);
+                            }
+                        }
+                    }
+
+                    Op::LocalGet => {
+                        let result = CodeIndex(self.param(base, len, 1)?);
+                        let local_index = self.param(base, len, 2)?;
+                        let var_desc = self.get_local(local_index as usize).unwrap();
+                        if var_desc.is_const() {
+                            if let Some(value) = var_desc.assignment {
+                                self.replace_const(base, result, value)?;
+                            }
+                        }
+                    }
+
                     Op::Nop
                     | Op::UnaryNop
                     | Op::Block
@@ -182,9 +232,6 @@ impl MinimalCodeOptimizer {
                     | Op::I32Const
                     | Op::I64Const
                     | Op::Inc
-                    | Op::LocalGet
-                    | Op::LocalSet
-                    | Op::LocalTee
                     | Op::Loop
                     | Op::Not
                     | Op::Popcnt => {}
@@ -748,6 +795,22 @@ impl MinimalCodeOptimizer {
         })
     }
 
+    fn get_local(&self, index: usize) -> Option<&LocalVarDescriptor> {
+        if index < self.params.len() {
+            self.params.get(index)
+        } else {
+            self.locals.get(index - self.params.len())
+        }
+    }
+
+    fn get_local_mut(&mut self, index: usize) -> Option<&mut LocalVarDescriptor> {
+        if index < self.params.len() {
+            self.params.get_mut(index)
+        } else {
+            self.locals.get_mut(index - self.params.len())
+        }
+    }
+
     fn replace(
         &mut self,
         target: ArrayIndex,
@@ -783,6 +846,20 @@ impl MinimalCodeOptimizer {
         self.replace_opcode(target, Op::Nop)
     }
 
+    fn replace_const(
+        &mut self,
+        target: ArrayIndex,
+        result: CodeIndex,
+        value: Constant,
+    ) -> Result<(), OptimizeError> {
+        match value {
+            Constant::I32(value) => self.replace_i32_const(target, result, value),
+            Constant::I64(value) => self.replace_i64_const(target, result, value),
+            Constant::F32(value) => self.replace_f32_const(target, result, value),
+            Constant::F64(value) => self.replace_f64_const(target, result, value),
+        }
+    }
+
     fn replace_i32_const(
         &mut self,
         target: ArrayIndex,
@@ -792,17 +869,38 @@ impl MinimalCodeOptimizer {
         self.replace(target, Op::I32Const, &[result.0, value as u32])
     }
 
-    // fn replace_i64_const(
-    //     &mut self,
-    //     target: ArrayIndex,
-    //     result: CodeIndex,
-    //     value: i64,
-    // ) -> Result<(), OptimizeError> {
-    //     let value = value as u64;
-    //     let l = value as u32;
-    //     let h = (value >> 32) as u32;
-    //     self.replace(target, Op::I64Const, &[result.0, l, h])
-    // }
+    fn replace_i64_const(
+        &mut self,
+        target: ArrayIndex,
+        result: CodeIndex,
+        value: i64,
+    ) -> Result<(), OptimizeError> {
+        let value = value as u64;
+        let l = value as u32;
+        let h = (value >> 32) as u32;
+        self.replace(target, Op::I64Const, &[result.0, l, h])
+    }
+
+    fn replace_f32_const(
+        &mut self,
+        target: ArrayIndex,
+        result: CodeIndex,
+        value: f32,
+    ) -> Result<(), OptimizeError> {
+        self.replace(target, Op::F32Const, &[result.0, value.to_bits()])
+    }
+
+    fn replace_f64_const(
+        &mut self,
+        target: ArrayIndex,
+        result: CodeIndex,
+        value: f64,
+    ) -> Result<(), OptimizeError> {
+        let value = value.to_bits();
+        let l = value as u32;
+        let h = (value >> 32) as u32;
+        self.replace(target, Op::F64Const, &[result.0, l, h])
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -822,37 +920,5 @@ impl ArrayIndex {
     #[inline]
     pub fn as_usize(&self) -> usize {
         self.0 as usize
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Constant {
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    F64(f64),
-}
-
-impl Constant {
-    pub fn is_same_type(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Self::I32(_), Self::I32(_))
-                | (Self::I64(_), Self::I64(_))
-                | (Self::F32(_), Self::F32(_))
-                | (Self::F64(_), Self::F64(_))
-        )
-    }
-
-    pub fn is_integer(&self) -> bool {
-        matches!(self, Self::I32(_) | Self::I64(_))
-    }
-
-    pub fn int_value(&self) -> Option<i64> {
-        match self {
-            Self::I32(v) => Some(*v as i64),
-            Self::I64(v) => Some(*v),
-            _ => None,
-        }
     }
 }

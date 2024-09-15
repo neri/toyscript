@@ -30,23 +30,8 @@ impl ClassDeclaration {
             .min_by(|a, b| a.position().start().cmp(&b.position().start()))
             .unwrap_or(&decisive_token);
 
-        let modifiers =
-            ModifierFlag::from_keywords(modifier_tokens.iter().filter_map(
-                |v| match v.token_type() {
-                    TokenType::Keyword(keyword) => Some(*keyword),
-                    _ => None,
-                },
-            ))
-            .map_err(|err| {
-                let token = modifier_tokens
-                    .iter()
-                    .find_map(|v| match v.token_type() {
-                        TokenType::Keyword(keyword) => (*keyword == err).then(|| v),
-                        _ => None,
-                    })
-                    .unwrap();
-                CompileError::unexpected_token(token)
-            })?;
+        let modifiers = ModifierFlag::from_tokens(modifier_tokens, &[])
+            .map_err(|token| CompileError::unexpected_token(&token))?;
 
         let identifier = Identifier::from_tokens(tokens)?;
 
@@ -203,23 +188,8 @@ impl EnumDeclaration {
             .min_by(|a, b| a.position().start().cmp(&b.position().start()))
             .unwrap_or(&decisive_token);
 
-        let modifiers =
-            ModifierFlag::from_keywords(modifier_tokens.iter().filter_map(
-                |v| match v.token_type() {
-                    TokenType::Keyword(keyword) => Some(*keyword),
-                    _ => None,
-                },
-            ))
-            .map_err(|err| {
-                let token = modifier_tokens
-                    .iter()
-                    .find_map(|v| match v.token_type() {
-                        TokenType::Keyword(keyword) => (*keyword == err).then(|| v),
-                        _ => None,
-                    })
-                    .unwrap();
-                CompileError::unexpected_token(token)
-            })?;
+        let modifiers = ModifierFlag::from_tokens(modifier_tokens, &[])
+            .map_err(|token| CompileError::unexpected_token(&token))?;
 
         let identifier = Identifier::from_tokens(tokens)?;
 

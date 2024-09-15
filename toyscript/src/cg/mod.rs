@@ -6,6 +6,7 @@ use crate::*;
 use ast::{
     block::Block,
     expression::{BinaryOperator, Expression, Unary, UnaryOperator},
+    float::Float,
     integer::Integer,
     statement::{IfType, Statement},
     variable::VariableDeclaration,
@@ -27,12 +28,7 @@ impl CodeGen {
                 Statement::Eof(_) | Statement::TypeAlias(_, _) => {}
 
                 Statement::Function(func_decl) => {
-                    let func_desc = types.function(func_decl.identifier().as_str()).ok_or(
-                        CompileError::internal_inconsistency(
-                            &format!("Function Declaration"),
-                            func_decl.identifier().id_position().into(),
-                        ),
-                    )?;
+                    let func_desc = types.function(func_decl.identifier().as_str()).unwrap();
                     if let Some(import_from) = func_decl.import_from() {
                         let mut params = Vec::new();
                         for param in func_desc.param_types() {
@@ -532,6 +528,15 @@ impl CodeGen {
             &expr.item(),
             scope,
         )?;
+        let result_opt_type = result_type.optimistic_type().map(|v| v.clone());
+        match (expected_type, result_opt_type) {
+            (Some(a1), Some(a2)) => {
+                if *a1 != a2 {
+                    return Err(CompileError::type_mismatch(&a1, &a2, expr.position()));
+                }
+            }
+            _ => {}
+        }
         Self::generate_unary(asm, &item, scope)
             .map(|_| result_type.optimistic_type().map(|v| v.clone()))
     }
@@ -571,6 +576,13 @@ impl CodeGen {
                 Ok((Unary::NumericLiteral(value, *position), inferred_to))
             }
 
+            Unary::FloatingPointLiteral(value, position) => {
+                let (value, inferred_to) =
+                    scope.types().infer_float(value, &inferred_to, *position)?;
+
+                Ok((Unary::FloatingPointLiteral(value, *position), inferred_to))
+            }
+
             Unary::Parenthesis(ref expr) => {
                 let (unary, inferred_type) = Self::infer_unary(inferred_to, expr.item(), scope)?;
 
@@ -584,12 +596,15 @@ impl CodeGen {
                 let target = InferredType::Inferred(
                     scope
                         .types()
-                        .resolve(type_desc)
+                        .get(&type_desc.identifier().as_string())
+                        .map(|v| v.clone())
                         .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
                 );
 
                 let (value, _inferred_to) =
                     Self::infer_unary(&InferredType::Unknown, value, scope)?;
+
+                // TODO: convert check
 
                 Ok((
                     Unary::Assertion(Box::new(value), type_desc.clone(), *position),
@@ -788,16 +803,18 @@ impl CodeGen {
             Unary::Parenthesis(expr) => Self::generate_unary(asm, expr.item(), scope),
 
             Unary::Assertion(ref value, ref type_desc, _position) => {
-                let target = InferredType::Inferred(
+                let new_type = InferredType::Inferred(
                     scope
                         .types()
                         .resolve(type_desc)
                         .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
                 );
 
-                Self::generate_unary(asm, value, scope)?;
+                let _old_type = Self::generate_unary(asm, value, scope)?;
 
-                Ok(target)
+                // TODO: convert
+
+                Ok(new_type)
             }
 
             Unary::Unary(op, position, ref value) => match op {
@@ -1024,7 +1041,6 @@ impl CodeGen {
                     ))
                 }
             },
-
             Unary::NumericLiteral(number, _position) => match number {
                 Integer::I8(v) => {
                     asm.ir_i32_const(*v as i32);
@@ -1075,7 +1091,20 @@ impl CodeGen {
                     ))
                 }
             },
-
+            Unary::FloatingPointLiteral(number, _position) => match number {
+                Float::F32(v) => {
+                    asm.ir_f32_const(*v);
+                    Ok(InferredType::Inferred(
+                        scope.types().primitive_type(Primitive::F32),
+                    ))
+                }
+                Float::F64(v) => {
+                    asm.ir_f64_const(*v);
+                    Ok(InferredType::Inferred(
+                        scope.types().primitive_type(Primitive::F64),
+                    ))
+                }
+            },
             Unary::CharLiteral(c, _position) => {
                 asm.ir_i32_const(*c as i32);
                 Ok(InferredType::Inferred(scope.types().builtin_char()))
@@ -1083,17 +1112,6 @@ impl CodeGen {
             Unary::StringLiteral(_, _position) => {
                 // TODO:
                 return Err(CompileError::todo(None, item.position()));
-            }
-            Unary::Subscript(u, expr) => {
-                // TODO:
-                return Err(CompileError::todo(
-                    None,
-                    u.position().merged(&expr.position()),
-                ));
-            }
-            Unary::Member(_u, identifier) => {
-                // TODO:
-                return Err(CompileError::todo(None, identifier.id_position()));
             }
 
             Unary::Invoke(ref callee, args) => {
@@ -1133,6 +1151,18 @@ impl CodeGen {
                 }
 
                 Ok(InferredType::Inferred(func_desc.result_type().clone()))
+            }
+
+            Unary::Subscript(u, expr) => {
+                // TODO:
+                return Err(CompileError::todo(
+                    None,
+                    u.position().merged(&expr.position()),
+                ));
+            }
+            Unary::Member(_u, identifier) => {
+                // TODO:
+                return Err(CompileError::todo(None, identifier.id_position()));
             }
         }
     }

@@ -32,6 +32,7 @@ impl Function {
                     high_context_type: type_id.to_owned(),
                     primitive_type,
                     is_mut: true,
+                    assignment: None,
                 });
             }
         }
@@ -83,14 +84,18 @@ impl Function {
 
 impl core::fmt::Debug for Function {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Function")
-            .field("signature", &self.signature)
-            .field("exports", &self.exports)
-            .field("params", &LocalIter(&self.params))
-            .field("results", &LocalIter(&self.results))
-            .field("locals", &LocalIter(&self.locals))
-            .field("codes", &CoreDumper(&self.codes))
-            .finish()
+        let mut d = f.debug_struct("Function");
+        let mut d = &mut d;
+
+        d = d.field("signature", &self.signature);
+        if let Some(exports) = self.exports.as_ref() {
+            d = d.field("exports", &exports);
+        }
+        d = d.field("params", &LocalIter(&self.params));
+        d = d.field("results", &LocalIter(&self.results));
+        d = d.field("locals", &LocalIter(&self.locals));
+        d = d.field("codes", &CoreDumper(&self.codes));
+        d.finish()
     }
 }
 
@@ -127,6 +132,7 @@ impl FunctionBuilder {
             high_context_type: high_context_type.to_owned(),
             primitive_type,
             is_mut: false,
+            assignment: None,
         };
         self.params.push(item);
         Ok(local_idx)
@@ -150,6 +156,7 @@ impl FunctionBuilder {
             high_context_type: high_context_type.to_owned(),
             primitive_type,
             is_mut,
+            assignment: None,
         };
         self.locals.push(item);
         Ok(())
@@ -181,7 +188,7 @@ impl FunctionBuilder {
             locals,
         } = self;
 
-        let codes = MinimalCodeOptimizer::optimize(buf)?;
+        let codes = MinimalCodeOptimizer::optimize(buf, &params, &locals)?;
 
         Ok(Function {
             signature,
@@ -378,6 +385,22 @@ impl FunctionAssembler<'_> {
         self.emit(Op::I64Const, &[result.into(), value.into()]);
     }
 
+    /// %result = const $i
+    #[inline]
+    pub fn ir_f32_const(&mut self, value: f32) {
+        let result = self.current_index();
+        self.push_vs(result);
+        self.emit(Op::F32Const, &[result.into(), value.to_bits().into()]);
+    }
+
+    /// %result = const $i
+    #[inline]
+    pub fn ir_f64_const(&mut self, value: f64) {
+        let result = self.current_index();
+        self.push_vs(result);
+        self.emit(Op::F64Const, &[result.into(), value.to_bits().into()]);
+    }
+
     /// br %block
     #[inline]
     pub fn ir_br(&mut self, target: BlockIndex) -> Result<(), AssembleError> {
@@ -416,14 +439,17 @@ impl FunctionAssembler<'_> {
     pub fn ir_local_get(&mut self, localidx: LocalIndex) {
         let result = self.current_index();
         self.push_vs(result);
-        self.emit(Op::LocalGet, &[result.into(), localidx.as_u32().into()]);
+        self.emit(
+            Op::LocalGet,
+            &[result.into(), localidx.as_u32().into(), 0.into()],
+        );
     }
 
     /// local_set %value, $idx
     #[inline]
     pub fn ir_local_set(&mut self, localidx: LocalIndex) -> Result<(), AssembleError> {
-        let result = self.pop_vs()?;
-        self.emit(Op::LocalSet, &[result.into(), localidx.as_u32().into()]);
+        let ssa_index = self.pop_vs()?;
+        self.emit(Op::LocalSet, &[ssa_index.into(), localidx.as_u32().into()]);
         Ok(())
     }
 
@@ -599,14 +625,121 @@ impl CodeFragment<'_> {
 
 impl core::fmt::Debug for CodeFragment<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "/* {:04x} {:04x} */ {} {:?}",
-            self.params.len() + 1,
-            self.opcode as usize,
-            self.opcode,
-            self.params
-        )
+        let len = self.params.len() + 1;
+        match self.opcode {
+            Op::I32Const => {
+                let const_val = self.params[1];
+                match const_val {
+                    0x20..=0x7E => {
+                        write!(
+                            f,
+                            "/* {:04x} {:04x} */ %{} = {} {} /* {:?} {:#x} */",
+                            len,
+                            self.opcode as usize,
+                            self.params[0],
+                            self.opcode,
+                            const_val,
+                            const_val as u8 as char,
+                            const_val,
+                        )
+                    }
+                    _ => {
+                        write!(
+                            f,
+                            "/* {:04x} {:04x} */ %{} = {} {} /* {:#x} */",
+                            len,
+                            self.opcode as usize,
+                            self.params[0],
+                            self.opcode,
+                            const_val as i32,
+                            const_val,
+                        )
+                    }
+                }
+            }
+            Op::I64Const => {
+                let pl = self.params[1];
+                let ph = self.params[2];
+                let const_val = (pl as u64) + ((ph as u64) << 32);
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} {:#x} /* {:?} */",
+                    len, self.opcode as usize, self.params[0], self.opcode, const_val, self.params,
+                )
+            }
+            Op::F32Const => {
+                let const_val = f32::from_bits(self.params[1]);
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} {} /* {:?} */",
+                    len, self.opcode as usize, self.params[0], self.opcode, const_val, self.params,
+                )
+            }
+            Op::F64Const => {
+                let pl = self.params[1];
+                let ph = self.params[2];
+                let const_val = f64::from_bits((pl as u64) + ((ph as u64) << 32));
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} {} /* {:?} */",
+                    len, self.opcode as usize, self.params[0], self.opcode, const_val, self.params,
+                )
+            }
+            Op::LocalGet => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} ${}",
+                    len, self.opcode as usize, self.params[0], self.opcode, self.params[1],
+                )
+            }
+            Op::LocalSet => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ {} %{}, ${}",
+                    len, self.opcode as usize, self.opcode, self.params[0], self.params[1],
+                )
+            }
+            Op::LocalTee => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} ${}, %{}",
+                    len,
+                    self.opcode as usize,
+                    self.params[0],
+                    self.opcode,
+                    self.params[1],
+                    self.params[2],
+                )
+            }
+            _ => match self.opcode.class() {
+                OpClass::UnOp => {
+                    write!(
+                        f,
+                        "/* {:04x} {:04x} */ %{} = {} %{}",
+                        len, self.opcode as usize, self.params[0], self.opcode, self.params[1],
+                    )
+                }
+                OpClass::Cmp | OpClass::BinOp => {
+                    write!(
+                        f,
+                        "/* {:04x} {:04x} */ %{} = {} %{}, %{}",
+                        len,
+                        self.opcode as usize,
+                        self.params[0],
+                        self.opcode,
+                        self.params[1],
+                        self.params[2],
+                    )
+                }
+                _ => {
+                    write!(
+                        f,
+                        "/* {:04x} {:04x} */ {} {:?}",
+                        len, self.opcode as usize, self.opcode, self.params
+                    )
+                }
+            },
+        }
     }
 }
 
@@ -685,13 +818,16 @@ impl core::fmt::Debug for LocalIter<'_> {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub struct LocalVarDescriptor {
     index: LocalIndex,
     identifier: Option<String>,
     high_context_type: String,
     primitive_type: Primitive,
     is_mut: bool,
+    pub(super) assignment: Option<Constant>,
+    // pub(super)  was_read: bool,
+    // pub(super)  was_written: bool,
 }
 
 impl LocalVarDescriptor {
@@ -703,5 +839,60 @@ impl LocalVarDescriptor {
     #[inline]
     pub fn primitive_type(&self) -> Primitive {
         self.primitive_type
+    }
+
+    #[inline]
+    pub const fn is_mut(&self) -> bool {
+        self.is_mut
+    }
+
+    #[inline]
+    pub const fn is_const(&self) -> bool {
+        !self.is_mut
+    }
+}
+
+impl Clone for LocalVarDescriptor {
+    fn clone(&self) -> Self {
+        Self {
+            index: self.index.clone(),
+            identifier: self.identifier.clone(),
+            high_context_type: self.high_context_type.clone(),
+            primitive_type: self.primitive_type.clone(),
+            is_mut: self.is_mut.clone(),
+            assignment: self.assignment.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Constant {
+    I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
+}
+
+impl Constant {
+    pub fn is_same_type(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::I32(_), Self::I32(_))
+                | (Self::I64(_), Self::I64(_))
+                | (Self::F32(_), Self::F32(_))
+                | (Self::F64(_), Self::F64(_))
+        )
+    }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(self, Self::I32(_) | Self::I64(_))
+    }
+
+    pub fn int_value(&self) -> Option<i64> {
+        match self {
+            Self::I32(v) => Some(*v as i64),
+            Self::I64(v) => Some(*v),
+            _ => None,
+        }
     }
 }
