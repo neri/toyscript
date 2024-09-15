@@ -108,12 +108,8 @@ impl MinimalCodeOptimizer {
                         }
                     }
 
-                    // binop
-                    Op::Add
-                    | Op::And
-                    | Op::DivS
-                    | Op::DivU
-                    | Op::Eq
+                    // cmp
+                    Op::Eq
                     | Op::GeS
                     | Op::GeU
                     | Op::GtS
@@ -121,7 +117,18 @@ impl MinimalCodeOptimizer {
                     | Op::LeS
                     | Op::LeU
                     | Op::LtS
-                    | Op::LtU
+                    | Op::LtU => {
+                        let result = CodeIndex(self.param(base, len, 1)?);
+                        let lhs = CodeIndex(self.param(base, len, 2)?);
+                        let rhs = CodeIndex(self.param(base, len, 3)?);
+                        self.reduce_cmp(base, opcode, result, lhs, rhs)?;
+                    }
+
+                    // binop
+                    Op::Add
+                    | Op::And
+                    | Op::DivS
+                    | Op::DivU
                     | Op::Mul
                     | Op::Ne
                     | Op::Or
@@ -221,6 +228,8 @@ impl MinimalCodeOptimizer {
 
                     Op::Nop
                     | Op::UnaryNop
+                    | Op::DropRight
+                    | Op::Drop2
                     | Op::Block
                     | Op::Call
                     | Op::Clz
@@ -234,7 +243,8 @@ impl MinimalCodeOptimizer {
                     | Op::Inc
                     | Op::Loop
                     | Op::Not
-                    | Op::Popcnt => {}
+                    | Op::Popcnt
+                    | Op::Neg => {}
                 }
             }
         }
@@ -422,7 +432,8 @@ impl MinimalCodeOptimizer {
                     | Op::Eqz
                     | Op::Inc
                     | Op::Not
-                    | Op::Popcnt => {
+                    | Op::Popcnt
+                    | Op::Neg => {
                         for i in 1..=2 {
                             self.rename(&ren_tbl, base, len, i)?;
                         }
@@ -430,7 +441,8 @@ impl MinimalCodeOptimizer {
 
                     // binary
                     // %n = op %n, %n
-                    Op::Add
+                    Op::DropRight
+                    | Op::Add
                     | Op::And
                     | Op::DivS
                     | Op::DivU
@@ -456,6 +468,12 @@ impl MinimalCodeOptimizer {
                     | Op::Sub
                     | Op::Xor => {
                         for i in 1..=3 {
+                            self.rename(&ren_tbl, base, len, i)?;
+                        }
+                    }
+
+                    Op::Drop2 => {
+                        for i in 2..=3 {
                             self.rename(&ren_tbl, base, len, i)?;
                         }
                     }
@@ -510,6 +528,15 @@ impl MinimalCodeOptimizer {
 
             Op::Call => Ok(false),
 
+            Op::DropRight => {
+                let lhs = self.param(base, len, 2)?;
+                let rhs = self.param(base, len, 3)?;
+                if self.chain_drop(CodeIndex(lhs))? {
+                    self.replace(base, Op::Drop, &[rhs])?;
+                }
+                return Ok(true);
+            }
+
             Op::LocalTee => {
                 let operand2 = self.param(base, len, 2)?;
                 let operand3 = self.param(base, len, 3)?;
@@ -543,10 +570,29 @@ impl MinimalCodeOptimizer {
             | Op::ShrU
             | Op::Sub
             | Op::Xor => {
-                self.chain_drop(CodeIndex(self.param(base, len, 2)?))?;
-                self.chain_drop(CodeIndex(self.param(base, len, 3)?))?;
-                self.replace_nop(base)?;
-                return Ok(true);
+                let result = self.param(base, len, 1)?;
+                let lhs = self.param(base, len, 2)?;
+                let rhs = self.param(base, len, 3)?;
+                let lhs_droppable = self.chain_drop(CodeIndex(lhs))?;
+                let rhs_droppable = self.chain_drop(CodeIndex(rhs))?;
+                match (lhs_droppable, rhs_droppable) {
+                    (true, true) => {
+                        self.replace_nop(base)?;
+                        return Ok(true);
+                    }
+                    (true, false) => {
+                        self.replace(base, Op::Drop, &[rhs])?;
+                        return Ok(true);
+                    }
+                    (false, true) => {
+                        self.replace(base, Op::UnaryNop, &[result, lhs])?;
+                        return Ok(false);
+                    }
+                    (false, false) => {
+                        self.replace_opcode(base, Op::Drop2)?;
+                        return Ok(true);
+                    }
+                }
             }
 
             // unop
@@ -557,13 +603,19 @@ impl MinimalCodeOptimizer {
             | Op::Eqz
             | Op::Inc
             | Op::Not
-            | Op::Popcnt => {
-                self.chain_drop(CodeIndex(self.param(base, len, 2)?))?;
-                self.replace_nop(base)?;
+            | Op::Popcnt
+            | Op::Neg => {
+                let operand2 = self.param(base, len, 2)?;
+                if self.chain_drop(CodeIndex(operand2))? {
+                    self.replace_nop(base)?;
+                } else {
+                    self.replace(base, Op::Drop, &[operand2])?;
+                }
                 return Ok(true);
             }
 
-            Op::Block
+            Op::Drop2
+            | Op::Block
             | Op::Br
             | Op::BrIf
             | Op::Drop
@@ -593,37 +645,27 @@ impl MinimalCodeOptimizer {
         match (lhs_const, rhs_const) {
             (Some(Constant::I32(lhs)), Some(Constant::I32(rhs))) => {
                 let value = match opcode {
-                    Op::Eq => (lhs == rhs) as i32,
-                    Op::Ne => (lhs != rhs) as i32,
-                    Op::GeS => (lhs >= rhs) as i32,
-                    Op::GeU => ((lhs as u32) >= (rhs as u32)) as i32,
-                    Op::GtS => (lhs > rhs) as i32,
-                    Op::GtU => ((lhs as u32) > (rhs as u32)) as i32,
-                    Op::LeS => (lhs <= rhs) as i32,
-                    Op::LeU => ((lhs as u32) <= (rhs as u32)) as i32,
-                    Op::LtS => (lhs < rhs) as i32,
-                    Op::LtU => ((lhs as u32) < (rhs as u32)) as i32,
                     Op::Add => lhs.wrapping_add(rhs),
                     Op::Sub => lhs.wrapping_sub(rhs),
                     Op::Mul => lhs.wrapping_mul(rhs),
                     Op::DivS => match lhs.checked_div(rhs) {
                         Some(v) => v,
-                        // TODO: cannot convert NaN
+                        // cannot convert NaN
                         None => return Ok(false),
                     },
                     Op::RemS => match lhs.checked_rem(rhs) {
                         Some(v) => v,
-                        // TODO: cannot convert NaN
+                        // cannot convert NaN
                         None => return Ok(false),
                     },
                     Op::DivU => match (lhs as u32).checked_div(rhs as u32) {
                         Some(v) => v as i32,
-                        // TODO: cannot convert NaN
+                        // cannot convert NaN
                         None => return Ok(false),
                     },
                     Op::RemU => match (lhs as u32).checked_rem(rhs as u32) {
                         Some(v) => v as i32,
-                        // TODO: cannot convert NaN
+                        // cannot convert NaN
                         None => return Ok(false),
                     },
                     Op::And => lhs.bitand(rhs),
@@ -642,6 +684,73 @@ impl MinimalCodeOptimizer {
                 self.replace_i32_const(base, result, value)?;
                 return Ok(true);
             }
+            (Some(Constant::I64(lhs)), Some(Constant::I64(rhs))) => {
+                let value = match opcode {
+                    Op::Add => lhs.wrapping_add(rhs),
+                    Op::Sub => lhs.wrapping_sub(rhs),
+                    Op::Mul => lhs.wrapping_mul(rhs),
+                    Op::DivS => match lhs.checked_div(rhs) {
+                        Some(v) => v,
+                        // cannot convert NaN
+                        None => return Ok(false),
+                    },
+                    Op::RemS => match lhs.checked_rem(rhs) {
+                        Some(v) => v,
+                        // cannot convert NaN
+                        None => return Ok(false),
+                    },
+                    Op::DivU => match (lhs as u64).checked_div(rhs as u64) {
+                        Some(v) => v as i64,
+                        // cannot convert NaN
+                        None => return Ok(false),
+                    },
+                    Op::RemU => match (lhs as u64).checked_rem(rhs as u64) {
+                        Some(v) => v as i64,
+                        // cannot convert NaN
+                        None => return Ok(false),
+                    },
+                    Op::And => lhs.bitand(rhs),
+                    Op::Or => lhs.bitor(rhs),
+                    Op::Xor => lhs.bitxor(rhs),
+                    Op::Shl => lhs.wrapping_shl(rhs as u32),
+                    Op::ShrS => lhs.wrapping_shr(rhs as u32),
+                    Op::ShrU => (lhs as u64).wrapping_shr(rhs as u32) as i64,
+                    Op::Rotl => lhs.rotate_left(rhs as u32),
+                    Op::Rotr => lhs.rotate_right(rhs as u32),
+
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_i64_const(base, result, value)?;
+                return Ok(true);
+            }
+            (Some(Constant::F32(lhs)), Some(Constant::F32(rhs))) => {
+                let value = match opcode {
+                    Op::Add => lhs + rhs,
+                    Op::Sub => lhs - rhs,
+                    Op::Mul => lhs * rhs,
+                    Op::DivS => lhs / rhs,
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_f32_const(base, result, value)?;
+                return Ok(true);
+            }
+            (Some(Constant::F64(lhs)), Some(Constant::F64(rhs))) => {
+                let value = match opcode {
+                    Op::Add => lhs + rhs,
+                    Op::Sub => lhs - rhs,
+                    Op::Mul => lhs * rhs,
+                    Op::DivS => lhs / rhs,
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_f64_const(base, result, value)?;
+                return Ok(true);
+            }
             _ => {}
         }
 
@@ -649,11 +758,6 @@ impl MinimalCodeOptimizer {
             // binop (???, 0)
             if rhs_const == 0 {
                 match opcode {
-                    Op::Eq => {
-                        self.replace_nop(rhs_a)?;
-                        self.replace(base, Op::Eqz, &[result.0, lhs.0])?;
-                        return Ok(true);
-                    }
                     Op::Add
                     | Op::Sub
                     | Op::Or
@@ -699,6 +803,7 @@ impl MinimalCodeOptimizer {
                                 )?;
                                 self.replace_opcode(base, Op::Shl)?;
                             }
+                            return Ok(true);
                         }
                         Op::DivU => {
                             if rhs_const == 1 {
@@ -712,13 +817,253 @@ impl MinimalCodeOptimizer {
                                 )?;
                                 self.replace_opcode(base, Op::ShrU)?;
                             }
+                            return Ok(true);
                         }
                         Op::RemU => {
                             self.replace_i32_const(rhs_a, rhs, rhs_const.wrapping_sub(1) as i32)?;
                             self.replace_opcode(base, Op::And)?;
+                            return Ok(true);
                         }
                         _ => {}
                     }
+                }
+            }
+        }
+        if let Some(Constant::I32(lhs_const)) = lhs_const {
+            // binop (0, ???)
+            if lhs_const == 0 {
+                match opcode {
+                    Op::Add | Op::Or | Op::Xor => {
+                        self.replace_nop(lhs_a)?;
+                        self.replace(base, Op::UnaryNop, &[result.0, rhs.0])?;
+                        return Ok(true);
+                    }
+                    Op::Mul
+                    | Op::DivS
+                    | Op::DivU
+                    | Op::RemS
+                    | Op::RemU
+                    | Op::And
+                    | Op::Shl
+                    | Op::ShrS
+                    | Op::ShrU
+                    | Op::Rotl
+                    | Op::Rotr => {
+                        if self.chain_drop(rhs)? {
+                            self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                        } else {
+                            self.replace_opcode(base, Op::DropRight)?;
+                        }
+                        return Ok(true);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some(Constant::I64(rhs_const)) = rhs_const {
+            // binop (???, 0)
+            if rhs_const == 0 {
+                match opcode {
+                    Op::Add
+                    | Op::Sub
+                    | Op::Or
+                    | Op::Xor
+                    | Op::Shl
+                    | Op::ShrS
+                    | Op::ShrU
+                    | Op::Rotl
+                    | Op::Rotr => {
+                        self.replace_nop(rhs_a)?;
+                        self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                        return Ok(true);
+                    }
+                    Op::Mul | Op::And => {
+                        if self.chain_drop(lhs)? {
+                            self.replace_nop(rhs_a)?;
+                        } else {
+                            self.replace(rhs_a, Op::Drop, &[lhs.0])?;
+                        }
+                        self.replace_i64_const(base, result, 0)?;
+                        return Ok(true);
+                    }
+                    // TODO: cannot convert NaN
+                    Op::DivS | Op::DivU | Op::RemS | Op::RemU => return Ok(false),
+                    _ => {}
+                }
+            }
+
+            {
+                // mul or div (???, const (power of two))
+                let rhs_const = rhs_const as u64;
+                if rhs_const.next_power_of_two() == rhs_const {
+                    match opcode {
+                        Op::Mul => {
+                            if rhs_const == 1 {
+                                self.replace_nop(rhs_a)?;
+                                self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                            } else {
+                                self.replace_i64_const(
+                                    rhs_a,
+                                    rhs,
+                                    rhs_const.trailing_zeros() as i64,
+                                )?;
+                                self.replace_opcode(base, Op::Shl)?;
+                            }
+                            return Ok(true);
+                        }
+                        Op::DivU => {
+                            if rhs_const == 1 {
+                                self.replace_nop(rhs_a)?;
+                                self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
+                            } else {
+                                self.replace_i64_const(
+                                    rhs_a,
+                                    rhs,
+                                    rhs_const.trailing_zeros() as i64,
+                                )?;
+                                self.replace_opcode(base, Op::ShrU)?;
+                            }
+                            return Ok(true);
+                        }
+                        Op::RemU => {
+                            self.replace_i64_const(rhs_a, rhs, rhs_const.wrapping_sub(1) as i64)?;
+                            self.replace_opcode(base, Op::And)?;
+                            return Ok(true);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        if let Some(Constant::F32(lhs_const)) = lhs_const {
+            // binop (0, ???)
+            if lhs_const == 0.0 {
+                match opcode {
+                    Op::Sub => {
+                        self.replace_nop(lhs_a)?;
+                        self.replace(base, Op::Neg, &[result.0, rhs.0])?;
+                        return Ok(true);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some(Constant::F64(lhs_const)) = lhs_const {
+            // binop (0, ???)
+            if lhs_const == 0.0 {
+                match opcode {
+                    Op::Sub => {
+                        self.replace_nop(lhs_a)?;
+                        self.replace(base, Op::Neg, &[result.0, rhs.0])?;
+                        return Ok(true);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn reduce_cmp(
+        &mut self,
+        base: ArrayIndex,
+        opcode: Op,
+        result: CodeIndex,
+        lhs: CodeIndex,
+        rhs: CodeIndex,
+    ) -> Result<bool, OptimizeError> {
+        let lhs_a = self.array_index(lhs)?;
+        let rhs_a = self.array_index(rhs)?;
+        let lhs_const = self.get_const(lhs_a)?;
+        let rhs_const = self.get_const(rhs_a)?;
+
+        // binop (const, const)
+        match (lhs_const, rhs_const) {
+            (Some(Constant::I32(lhs)), Some(Constant::I32(rhs))) => {
+                let value = match opcode {
+                    Op::Eq => lhs == rhs,
+                    Op::Ne => lhs != rhs,
+                    Op::GeS => lhs >= rhs,
+                    Op::GeU => (lhs as u32) >= (rhs as u32),
+                    Op::GtS => lhs > rhs,
+                    Op::GtU => (lhs as u32) > (rhs as u32),
+                    Op::LeS => lhs <= rhs,
+                    Op::LeU => (lhs as u32) <= (rhs as u32),
+                    Op::LtS => lhs < rhs,
+                    Op::LtU => (lhs as u32) < (rhs as u32),
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_i32_const(base, result, value as i32)?;
+                return Ok(true);
+            }
+            (Some(Constant::I64(lhs)), Some(Constant::I64(rhs))) => {
+                let value = match opcode {
+                    Op::Eq => lhs == rhs,
+                    Op::Ne => lhs != rhs,
+                    Op::GeS => lhs >= rhs,
+                    Op::GeU => (lhs as u64) >= (rhs as u64),
+                    Op::GtS => lhs > rhs,
+                    Op::GtU => (lhs as u64) > (rhs as u64),
+                    Op::LeS => lhs <= rhs,
+                    Op::LeU => (lhs as u64) <= (rhs as u64),
+                    Op::LtS => lhs < rhs,
+                    Op::LtU => (lhs as u64) < (rhs as u64),
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_i32_const(base, result, value as i32)?;
+                return Ok(true);
+            }
+            (Some(Constant::F32(lhs)), Some(Constant::F32(rhs))) => {
+                let value = match opcode {
+                    Op::Eq => lhs == rhs,
+                    Op::Ne => lhs != rhs,
+                    Op::GeS => lhs >= rhs,
+                    Op::GtS => lhs > rhs,
+                    Op::LeS => lhs <= rhs,
+                    Op::LtS => lhs < rhs,
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_i32_const(base, result, value as i32)?;
+                return Ok(true);
+            }
+            (Some(Constant::F64(lhs)), Some(Constant::F64(rhs))) => {
+                let value = match opcode {
+                    Op::Eq => lhs == rhs,
+                    Op::Ne => lhs != rhs,
+                    Op::GeS => lhs >= rhs,
+                    Op::GtS => lhs > rhs,
+                    Op::LeS => lhs <= rhs,
+                    Op::LtS => lhs < rhs,
+                    _ => return Ok(false),
+                };
+                self.replace_nop(lhs_a)?;
+                self.replace_nop(rhs_a)?;
+                self.replace_i32_const(base, result, value as i32)?;
+                return Ok(true);
+            }
+            _ => {}
+        }
+
+        if let Some(Constant::I32(rhs_const)) = rhs_const {
+            // binop (???, 0)
+            if rhs_const == 0 {
+                match opcode {
+                    Op::Eq => {
+                        self.replace_nop(rhs_a)?;
+                        self.replace(base, Op::Eqz, &[result.0, lhs.0])?;
+                        return Ok(true);
+                    }
+                    _ => {}
                 }
             }
         }

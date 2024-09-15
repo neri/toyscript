@@ -1231,6 +1231,7 @@ impl WasmOpcode {
             toyir::Op::Sub => Some(Self::F32Sub),
             toyir::Op::Mul => Some(Self::F32Mul),
             toyir::Op::DivS => Some(Self::F32Div),
+            toyir::Op::Neg => Some(Self::F32Neg),
             _ => None
         }
     }
@@ -1247,6 +1248,7 @@ impl WasmOpcode {
             toyir::Op::Sub => Some(Self::F64Sub),
             toyir::Op::Mul => Some(Self::F64Mul),
             toyir::Op::DivS => Some(Self::F64Div),
+            toyir::Op::Neg => Some(Self::F64Neg),
             _ => None
         }
     }

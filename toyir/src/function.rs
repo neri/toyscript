@@ -516,8 +516,6 @@ impl FunctionAssembler<'_> {
     }
 
     /// Pseudo-instruction to reverse the sign
-    ///
-    /// TODO: support for f32.neg and f64.neg
     pub fn ir_neg<F, R, E>(&mut self, kernel: F) -> Result<R, E>
     where
         F: FnOnce(&mut Self) -> Result<(Primitive, R), E>,

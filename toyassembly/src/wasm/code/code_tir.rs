@@ -233,6 +233,28 @@ impl FromToyIR {
                     writer.write(mnemonic).unwrap();
                 }
 
+                TIR::DropRight => {
+                    let result = Self::get_params(tir.params(), 0)?;
+                    let lhs_i = Self::get_params(tir.params(), 1)?;
+                    let rhs_i = Self::get_params(tir.params(), 2)?;
+
+                    let _rhs_t = value_stack.expect(rhs_i)?;
+                    let lhs_t = value_stack.expect(lhs_i)?;
+                    value_stack.push(result, lhs_t);
+
+                    writer.write(WasmOpcode::Drop).unwrap();
+                }
+
+                TIR::Drop2 => {
+                    let lhs_i = Self::get_params(tir.params(), 1)?;
+                    let rhs_i = Self::get_params(tir.params(), 2)?;
+                    let _rhs_t = value_stack.expect(rhs_i)?;
+                    let _lhs_t = value_stack.expect(lhs_i)?;
+
+                    writer.write(WasmOpcode::Drop).unwrap();
+                    writer.write(WasmOpcode::Drop).unwrap();
+                }
+
                 // cmp
                 TIR::Eq
                 | TIR::Ne
@@ -262,7 +284,7 @@ impl FromToyIR {
                 }
 
                 // unop
-                TIR::Eqz | TIR::Clz | TIR::Ctz | TIR::Popcnt => {
+                TIR::Eqz | TIR::Clz | TIR::Ctz | TIR::Popcnt | TIR::Neg => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let operand = Self::get_params(tir.params(), 1)?;
                     let val_type = value_stack.expect(operand)?;

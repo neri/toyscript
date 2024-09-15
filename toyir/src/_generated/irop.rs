@@ -10,8 +10,6 @@ pub enum Op {
     Unreachable,
     /// "nop"
     Nop,
-    /// "unary_nop"
-    UnaryNop,
     /// "block"
     Block,
     /// "loop"
@@ -106,6 +104,14 @@ pub enum Op {
     Inc,
     /// "dec"
     Dec,
+    /// "neg"
+    Neg,
+    /// "unary_nop"
+    UnaryNop,
+    /// "drop_right"
+    DropRight,
+    /// "drop2"
+    Drop2,
 }
 
 impl Op {
@@ -113,7 +119,6 @@ impl Op {
         &[
             Self::Unreachable,
             Self::Nop,
-            Self::UnaryNop,
             Self::Block,
             Self::Loop,
             Self::End,
@@ -161,6 +166,10 @@ impl Op {
             Self::Not,
             Self::Inc,
             Self::Dec,
+            Self::Neg,
+            Self::UnaryNop,
+            Self::DropRight,
+            Self::Drop2,
         ]
     }
 
@@ -168,7 +177,6 @@ impl Op {
         match v {
             "unreachable" => Some(Self::Unreachable),
             "nop" => Some(Self::Nop),
-            "unary_nop" => Some(Self::UnaryNop),
             "block" => Some(Self::Block),
             "loop" => Some(Self::Loop),
             "end" => Some(Self::End),
@@ -216,6 +224,10 @@ impl Op {
             "not" => Some(Self::Not),
             "inc" => Some(Self::Inc),
             "dec" => Some(Self::Dec),
+            "neg" => Some(Self::Neg),
+            "unary_nop" => Some(Self::UnaryNop),
+            "drop_right" => Some(Self::DropRight),
+            "drop2" => Some(Self::Drop2),
             _ => None,
         }
     }
@@ -224,7 +236,6 @@ impl Op {
         match self {
             Self::Unreachable => "unreachable",
             Self::Nop => "nop",
-            Self::UnaryNop => "unary_nop",
             Self::Block => "block",
             Self::Loop => "loop",
             Self::End => "end",
@@ -272,6 +283,10 @@ impl Op {
             Self::Not => "not",
             Self::Inc => "inc",
             Self::Dec => "dec",
+            Self::Neg => "neg",
+            Self::UnaryNop => "unary_nop",
+            Self::DropRight => "drop_right",
+            Self::Drop2 => "drop2",
         }
     }
 
@@ -279,7 +294,6 @@ impl Op {
         match self {
             Self::Unreachable => "Unreachable",
             Self::Nop => "Nop",
-            Self::UnaryNop => "UnaryNop",
             Self::Block => "Block",
             Self::Loop => "Loop",
             Self::End => "End",
@@ -327,6 +341,10 @@ impl Op {
             Self::Not => "Not",
             Self::Inc => "Inc",
             Self::Dec => "Dec",
+            Self::Neg => "Neg",
+            Self::UnaryNop => "UnaryNop",
+            Self::DropRight => "DropRight",
+            Self::Drop2 => "Drop2",
         }
     }
 
@@ -334,7 +352,6 @@ impl Op {
         match self {
             Self::Unreachable => OpClass::Control,
             Self::Nop => OpClass::Control,
-            Self::UnaryNop => OpClass::Control,
             Self::Block => OpClass::Block,
             Self::Loop => OpClass::Block,
             Self::End => OpClass::Block,
@@ -382,6 +399,10 @@ impl Op {
             Self::Not => OpClass::UnOp,
             Self::Inc => OpClass::UnOp,
             Self::Dec => OpClass::UnOp,
+            Self::Neg => OpClass::UnOp,
+            Self::UnaryNop => OpClass::Control,
+            Self::DropRight => OpClass::Control,
+            Self::Drop2 => OpClass::Control,
         }
     }
 
