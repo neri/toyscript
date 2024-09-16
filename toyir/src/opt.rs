@@ -266,13 +266,15 @@ impl MinimalCodeOptimizer {
             }
         }
 
-        {
+        for _ in 0..2 {
             // Reduce unnecessary blocks
             let mut block_freqs = BTreeMap::new();
             {
                 let mut last_block = None;
                 let mut block_empty_check = false;
+                let mut skip_until_end = false;
                 let mut ci = 0;
+                let mut block_stack = Vec::new();
                 while let Ok(base) = self.array_index(CodeIndex(ci)) {
                     ci += 1;
                     let (len, opcode) = self.get_op(base)?;
@@ -299,19 +301,50 @@ impl MinimalCodeOptimizer {
                         }
                     }
 
+                    if skip_until_end {
+                        if opcode != Op::End {
+                            self.replace_nop(base)?;
+                        } else {
+                            skip_until_end = false;
+                        }
+                        continue;
+                    }
+
                     match opcode {
                         // Op::Nop => {}
                         Op::Block => {
                             let block_index = self.param(base, len, 1)?;
+                            block_stack.push(block_index << 1);
                             block_freqs.insert(block_index, 0usize);
                             last_block = Some(block_index);
                             block_empty_check = true;
                         }
                         Op::Loop => {
                             let block_index = self.param(base, len, 1)?;
+                            block_stack.push(block_index << 1 | 1);
                             block_freqs.insert(block_index, 0usize);
                         }
-                        Op::Br | Op::BrIf => {
+                        Op::End => {
+                            let block_index = self.param(base, len, 1)?;
+                            block_stack
+                                .pop()
+                                .ok_or(OptimizeError::OutOfBlock(base.as_usize(), block_index))?;
+                        }
+                        Op::Br => {
+                            let block_index = self.param(base, len, 1)?;
+                            let last_block = block_stack.last().ok_or(
+                                OptimizeError::InvalidBranch(base.as_usize(), block_index),
+                            )?;
+                            if *last_block == (block_index << 1) {
+                                self.replace_nop(base)?;
+                                skip_until_end = true;
+                            } else {
+                                *block_freqs.get_mut(&block_index).ok_or(
+                                    OptimizeError::InvalidBranch(base.as_usize(), block_index),
+                                )? += 1;
+                            }
+                        }
+                        Op::BrIf => {
                             let block_index = self.param(base, len, 1)?;
                             *block_freqs.get_mut(&block_index).ok_or(
                                 OptimizeError::InvalidBranch(base.as_usize(), block_index),

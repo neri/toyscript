@@ -53,6 +53,8 @@ pub enum OptimizeError {
 
     OutOfCodes(usize),
 
+    OutOfBlock(usize, u32),
+
     InvalidBranch(usize, u32),
 
     InvalidParameter(usize, usize),
@@ -121,6 +123,9 @@ impl fmt::Display for OptimizeError {
                 .field(arg0)
                 .field(arg1)
                 .finish(),
+            Self::OutOfBlock(arg0, arg1) => {
+                f.debug_tuple("OutOfBlock").field(arg0).field(arg1).finish()
+            }
         }
     }
 }
