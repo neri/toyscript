@@ -16,12 +16,8 @@ impl Identifier {
     }
 
     #[inline]
-    pub fn new(identifier: &str, id_position: TokenPosition) -> Self {
-        let position = if id_position.start() == 0 && id_position.end() == 0 {
-            TokenPosition::new(0, identifier.len() as u32)
-        } else {
-            id_position
-        };
+    pub fn new(identifier: &str) -> Self {
+        let position = TokenPosition::new(0, identifier.len() as u32);
         Self {
             str: ArcStringSlice::from_str(identifier, position),
         }

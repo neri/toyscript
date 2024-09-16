@@ -33,10 +33,7 @@ impl CodeGen {
                         let mut params = Vec::new();
                         for param in func_desc.param_types() {
                             let primitive_type = types.resolve_primitive(param).ok_or(
-                                CompileError::invalid_type(&Identifier::new(
-                                    param.identifier(),
-                                    TokenPosition((0, 0)),
-                                )),
+                                CompileError::invalid_type(&Identifier::new(param.identifier())),
                             )?;
                             params.push(primitive_type);
                         }
@@ -47,7 +44,6 @@ impl CodeGen {
                             let primitive_type = types.resolve_primitive(result_type).ok_or(
                                 CompileError::invalid_type(&Identifier::new(
                                     result_type.identifier(),
-                                    TokenPosition((0, 0)),
                                 )),
                             )?;
                             results.push(primitive_type);
@@ -129,7 +125,6 @@ impl CodeGen {
                 .resolve_primitive(infered_type)
                 .ok_or(CompileError::invalid_type(&Identifier::new(
                     infered_type.identifier(),
-                    TokenPosition((0, 0)),
                 )))
                 .unwrap();
             var.set_index(builder.declare_param(
@@ -601,10 +596,11 @@ impl CodeGen {
                         .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
                 );
 
-                let (value, _inferred_to) =
-                    Self::infer_unary(&InferredType::Unknown, value, scope)?;
+                let (value, src_type) = Self::infer_unary(&InferredType::Unknown, value, scope)?;
 
-                // TODO: convert check
+                scope
+                    .types()
+                    .try_convert_type(None, &src_type, &target, *position)?;
 
                 Ok((
                     Unary::Assertion(Box::new(value), type_desc.clone(), *position),
@@ -802,7 +798,7 @@ impl CodeGen {
 
             Unary::Parenthesis(expr) => Self::generate_unary(asm, expr.item(), scope),
 
-            Unary::Assertion(ref value, ref type_desc, _position) => {
+            Unary::Assertion(ref value, ref type_desc, position) => {
                 let new_type = InferredType::Inferred(
                     scope
                         .types()
@@ -810,9 +806,11 @@ impl CodeGen {
                         .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
                 );
 
-                let _old_type = Self::generate_unary(asm, value, scope)?;
+                let src_type = Self::generate_unary(asm, value, scope)?;
 
-                // TODO: convert
+                scope
+                    .types()
+                    .try_convert_type(Some(asm), &src_type, &new_type, *position)?;
 
                 Ok(new_type)
             }
@@ -924,8 +922,8 @@ impl CodeGen {
                 | BinaryOperator::Ge
                 | BinaryOperator::Identical
                 | BinaryOperator::NotIdentical => {
-                    let lhs_type = Self::generate_unary(asm, lhs, scope)?;
-                    let _rhs_type = Self::generate_unary(asm, rhs, scope)?;
+                    let lhs_type = Self::generate_unary_canonical(asm, lhs, scope)?;
+                    let _rhs_type = Self::generate_unary_canonical(asm, rhs, scope)?;
                     let is_signed = lhs_type
                         .strict_type()
                         .and_then(|v| scope.types().resolve_primitive(v))
@@ -938,15 +936,24 @@ impl CodeGen {
                 BinaryOperator::Add
                 | BinaryOperator::Sub
                 | BinaryOperator::Mul
-                | BinaryOperator::Div
-                | BinaryOperator::Rem
                 | BinaryOperator::BitAnd
                 | BinaryOperator::BitOr
                 | BinaryOperator::BitXor
-                | BinaryOperator::Shl
-                | BinaryOperator::Shr => {
+                | BinaryOperator::Shl => {
                     let lhs_type = Self::generate_unary(asm, lhs, scope)?;
                     let _rhs_type = Self::generate_unary(asm, rhs, scope)?;
+                    let is_signed = lhs_type
+                        .strict_type()
+                        .and_then(|v| scope.types().resolve_primitive(v))
+                        .map(|v| v.is_signed())
+                        .unwrap_or(false);
+                    asm.emit_binop(op.to_ir(is_signed))?;
+                    Ok(lhs_type)
+                }
+
+                BinaryOperator::Div | BinaryOperator::Rem | BinaryOperator::Shr => {
+                    let lhs_type = Self::generate_unary_canonical(asm, lhs, scope)?;
+                    let _rhs_type = Self::generate_unary_canonical(asm, rhs, scope)?;
                     let is_signed = lhs_type
                         .strict_type()
                         .and_then(|v| scope.types().resolve_primitive(v))
@@ -980,10 +987,10 @@ impl CodeGen {
                     }
                     if let Some(inferred_type) = var_desc.inferred_type().optimistic_type() {
                         if inferred_type.is_special_type() {
-                            return Err(CompileError::invalid_type(&Identifier::new(
+                            return Err(CompileError::invalid_type2(
                                 inferred_type.identifier(),
                                 rhs.position(),
-                            )));
+                            ));
                         }
                     } else {
                         return Err(CompileError::could_not_infer(identifier));
@@ -1000,7 +1007,14 @@ impl CodeGen {
                         asm.ir_local_get(localidx);
                     }
 
-                    Self::generate_unary(asm, rhs, scope)?;
+                    if matches!(
+                        assign_operator,
+                        BinaryOperator::Div | BinaryOperator::Rem | BinaryOperator::Shr
+                    ) {
+                        Self::generate_unary_canonical(asm, rhs, scope)?;
+                    } else {
+                        Self::generate_unary(asm, rhs, scope)?;
+                    }
 
                     if !matches!(assign_operator, BinaryOperator::Assign) {
                         let is_signed = var_desc
@@ -1165,5 +1179,28 @@ impl CodeGen {
                 return Err(CompileError::todo(None, identifier.id_position()));
             }
         }
+    }
+
+    fn generate_unary_canonical(
+        asm: &mut toyir::FunctionAssembler,
+        item: &Unary,
+        scope: &Scope,
+    ) -> Result<InferredType, CompileError> {
+        let result_type = Self::generate_unary(asm, item, scope)?;
+
+        let Some(inferred_type) = result_type.optimistic_type() else {
+            return Ok(result_type);
+        };
+        let Some(primitive) = scope.types().resolve_primitive(inferred_type) else {
+            return Ok(result_type);
+        };
+
+        match primitive {
+            Primitive::I8 | Primitive::U8 | Primitive::I16 | Primitive::U16 => {
+                asm.ir_cast(Primitive::I32.type_id(), primitive.type_id())?;
+            }
+            _ => {}
+        }
+        Ok(result_type)
     }
 }

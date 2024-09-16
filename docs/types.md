@@ -10,7 +10,7 @@
 | `uint`    | Vary | Vary    | `i32`        | `unsigned int`        | Most Useful Unsigned Integer Type       |
 | `isize`   | Vary | Vary    | `i32`        | `intptr_t`            | Pointer precision Signed Integer Type   |
 | `usize`   | Vary | Vary    | `i32`        | `uintptr_t`, `size_t` | Pointer precision Unsigned Integer Type |
-| `boolean` | 1?   | 1       | `i32`        | `_Bool`               | Boolean Value                           |
+| `boolean` | 1?   | 1?      | `i32`        | `_Bool`               | Boolean Value                           |
 | `i8`      | 8    | 1       | `i32`        | `int8_t`              | Signed Integer Type                     |
 | `u8`      | 8    | 1       | `i32`        | `uint8_t`             | Unsigned Integer Type                   |
 | `i16`     | 16   | 2       | `i32`        | `int16_t`             | Signed Integer Type                     |

@@ -3,39 +3,35 @@
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// ToyScript Primitive Types
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Primitive {
-    /// "bool"
-    Bool,
     /// "f32"
-    F32,
+    F32 = 0x12,
     /// "f64"
-    F64,
+    F64 = 0x22,
     /// "i16"
-    I16,
+    I16 = 0x08,
     /// "i32"
-    I32,
+    I32 = 0x10,
     /// "i64"
-    I64,
+    I64 = 0x20,
     /// "i8"
-    I8,
+    I8 = 0x04,
     /// "u16"
-    U16,
+    U16 = 0x09,
     /// "u32"
-    U32,
+    U32 = 0x11,
     /// "u64"
-    U64,
+    U64 = 0x21,
     /// "u8"
-    U8,
+    U8 = 0x05,
     /// "void"
-    Void,
+    Void = 0x00,
 }
 
 impl Primitive {
     pub fn all_values() -> &'static [Self] {
         &[
-            Self::Bool,
             Self::F32,
             Self::F64,
             Self::I16,
@@ -52,7 +48,6 @@ impl Primitive {
 
     pub fn from_str(v: &str) -> Option<Self> {
         match v {
-            "bool" => Some(Self::Bool),
             "f32" => Some(Self::F32),
             "f64" => Some(Self::F64),
             "i16" => Some(Self::I16),
@@ -70,7 +65,6 @@ impl Primitive {
 
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::Bool => "bool",
             Self::F32 => "f32",
             Self::F64 => "f64",
             Self::I16 => "i16",
@@ -87,7 +81,6 @@ impl Primitive {
 
     pub const fn bits_of(&self) -> usize {
         match self {
-            Self::Bool => 1,
             Self::F32 => 32,
             Self::F64 => 64,
             Self::I16 => 16,
@@ -104,7 +97,6 @@ impl Primitive {
 
     pub const fn size_of(&self) -> usize {
         match self {
-            Self::Bool => 1,
             Self::F32 => 4,
             Self::F64 => 8,
             Self::I16 => 2,
@@ -121,7 +113,6 @@ impl Primitive {
 
     pub const fn align_of(&self) -> usize {
         match self {
-            Self::Bool => 1,
             Self::F32 => 4,
             Self::F64 => 8,
             Self::I16 => 2,
@@ -165,6 +156,55 @@ impl Primitive {
             Self::I64 => true,
             Self::I8 => true,
             _ => false
+        }
+    }
+
+    pub const fn is_integer(&self) -> bool {
+        match self {
+            Self::I16 => true,
+            Self::I32 => true,
+            Self::I64 => true,
+            Self::I8 => true,
+            Self::U16 => true,
+            Self::U32 => true,
+            Self::U64 => true,
+            Self::U8 => true,
+            _ => false
+        }
+    }
+
+    pub const fn is_float(&self) -> bool {
+        match self {
+            Self::F32 => true,
+            Self::F64 => true,
+            _ => false
+        }
+    }
+
+    /// generic type id
+    /// 
+    /// sum of:
+    ///     (is_unsigned: 1)
+    ///     (is_float: 2)
+    ///     (size_of_type << 2)
+    #[inline]
+    pub const fn type_id(&self) -> u32 {
+        *self as u32
+    }
+
+    pub fn from_type_id(v: u32) -> Option<Self> {
+        match v {
+            0x04 => Some(Self::I8),
+            0x05 => Some(Self::U8),
+            0x08 => Some(Self::I16),
+            0x09 => Some(Self::U16),
+            0x10 => Some(Self::I32),
+            0x11 => Some(Self::U32),
+            0x12 => Some(Self::F32),
+            0x20 => Some(Self::I64),
+            0x21 => Some(Self::U64),
+            0x22 => Some(Self::F64),
+            _ => None
         }
     }
 

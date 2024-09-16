@@ -209,10 +209,10 @@ impl VariableDescriptor {
         position: TokenPosition,
     ) -> Result<(), CompileError> {
         if inferred_type.is_special_type() {
-            return Err(CompileError::invalid_type(&Identifier::new(
+            return Err(CompileError::invalid_type2(
                 inferred_type.identifier(),
                 position,
-            )));
+            ));
         }
         match &self.inferred_type {
             InferredType::Inferred(old_id) => {

@@ -247,6 +247,12 @@ impl CompileError {
     }
 
     #[inline]
+    pub fn cast_error(src_type: &str, dest_type: &str, position: TokenPosition) -> Self {
+        let explanation = format!("casting `{}` as `{}` is invalid", src_type, dest_type);
+        Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
+    }
+
+    #[inline]
     pub fn const_out_of_range(value: String, position: TokenPosition) -> Self {
         let explanation = format!("Constant value '{}' is Out of range", value);
         Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))

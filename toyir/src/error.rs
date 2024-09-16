@@ -62,6 +62,8 @@ pub enum OptimizeError {
     InvalidDropChain(usize),
 
     RenameError(usize, usize, usize),
+
+    TypeCastError(usize, u32),
 }
 
 impl Error for OptimizeError {
@@ -113,6 +115,11 @@ impl fmt::Display for OptimizeError {
                 .field(arg0)
                 .field(arg1)
                 .field(arg2)
+                .finish(),
+            Self::TypeCastError(arg0, arg1) => f
+                .debug_tuple("TypeCastError")
+                .field(arg0)
+                .field(arg1)
                 .finish(),
         }
     }

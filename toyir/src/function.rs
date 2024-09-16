@@ -506,6 +506,23 @@ impl FunctionAssembler<'_> {
         Ok(())
     }
 
+    /// %result = cast %value, dest_type
+    pub fn ir_cast(&mut self, dest_type: u32, src_type: u32) -> Result<(), AssembleError> {
+        let operand = self.pop_vs()?;
+        let result = self.current_index();
+        self.push_vs(result);
+        self.emit(
+            Op::Cast,
+            &[
+                result.into(),
+                operand.into(),
+                dest_type.into(),
+                src_type.into(),
+            ],
+        );
+        Ok(())
+    }
+
     /// %result = invert %value, 0
     pub fn ir_invert(&mut self) -> Result<(), AssembleError> {
         let operand = self.pop_vs()?;
@@ -527,8 +544,7 @@ impl FunctionAssembler<'_> {
         let result = kernel(self)?;
 
         let patch_op = match result.0 {
-            Primitive::Bool
-            | Primitive::I8
+            Primitive::I8
             | Primitive::U8
             | Primitive::I16
             | Primitive::U16
@@ -661,16 +677,21 @@ impl core::fmt::Debug for CodeFragment<'_> {
                 let const_val = (pl as u64) + ((ph as u64) << 32);
                 write!(
                     f,
-                    "/* {:04x} {:04x} */ %{} = {} {:#x} /* {:?} */",
-                    len, self.opcode as usize, self.params[0], self.opcode, const_val, self.params,
+                    "/* {:04x} {:04x} */ %{} = {} {} /* {:#x}_{:#x} */",
+                    len, self.opcode as usize, self.params[0], self.opcode, const_val, ph, pl,
                 )
             }
             Op::F32Const => {
                 let const_val = f32::from_bits(self.params[1]);
                 write!(
                     f,
-                    "/* {:04x} {:04x} */ %{} = {} {} /* {:?} */",
-                    len, self.opcode as usize, self.params[0], self.opcode, const_val, self.params,
+                    "/* {:04x} {:04x} */ %{} = {} {} /* {:#x} */",
+                    len,
+                    self.opcode as usize,
+                    self.params[0],
+                    self.opcode,
+                    const_val,
+                    self.params[1],
                 )
             }
             Op::F64Const => {
@@ -679,8 +700,8 @@ impl core::fmt::Debug for CodeFragment<'_> {
                 let const_val = f64::from_bits((pl as u64) + ((ph as u64) << 32));
                 write!(
                     f,
-                    "/* {:04x} {:04x} */ %{} = {} {} /* {:?} */",
-                    len, self.opcode as usize, self.params[0], self.opcode, const_val, self.params,
+                    "/* {:04x} {:04x} */ %{} = {} {} /* {:#x}_{:#x} */",
+                    len, self.opcode as usize, self.params[0], self.opcode, const_val, ph, pl,
                 )
             }
             Op::LocalGet => {
@@ -707,6 +728,27 @@ impl core::fmt::Debug for CodeFragment<'_> {
                     self.opcode,
                     self.params[1],
                     self.params[2],
+                )
+            }
+            Op::Cast => {
+                let new_type = Primitive::from_type_id(self.params[2])
+                    .map(|v| v.as_str())
+                    .unwrap_or("???");
+                let old_type = Primitive::from_type_id(self.params[3])
+                    .map(|v| v.as_str())
+                    .unwrap_or("???");
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} %{}, {} as {} /* {}, {} */",
+                    len,
+                    self.opcode as usize,
+                    self.params[0],
+                    self.opcode,
+                    self.params[1],
+                    old_type,
+                    new_type,
+                    self.params[2],
+                    self.params[3],
                 )
             }
             _ => match self.opcode.class() {

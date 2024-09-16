@@ -6,7 +6,7 @@ use function::FunctionDescriptor;
 use index::FuncIndex;
 use keyword::ModifierFlag;
 use token::TokenPosition;
-use toyir::Primitive;
+use toyir::{FunctionAssembler, Primitive};
 
 pub mod function;
 pub mod index;
@@ -73,7 +73,7 @@ impl TypeSystem {
             .make_primitive_alias(BUILTIN_CHAR, Primitive::U32)
             .unwrap();
         system
-            .make_primitive_alias(BUILTIN_BOOLEAN, Primitive::Bool)
+            .make_primitive_alias(BUILTIN_BOOLEAN, Primitive::U8)
             .unwrap();
 
         // system.make_reference(
@@ -82,10 +82,7 @@ impl TypeSystem {
         // )?;
         // system.make_simple_alias(BUILTIN_HANDLE, BUILTIN_USIZE)?;
 
-        system.make_reference(
-            &Identifier::new(BUILTIN_STRING, TokenPosition::empty()),
-            &system.builtin_void(),
-        )?;
+        system.make_reference(&Identifier::new(BUILTIN_STRING), &system.builtin_void())?;
 
         let mut will_waiting_ids = Vec::new();
         let mut waiting_type_list = Vec::new();
@@ -319,8 +316,8 @@ impl TypeSystem {
     #[inline]
     fn _make_simple_alias(&mut self, identifier: &str, target: &str) -> Result<(), CompileError> {
         self.make_alias(
-            &Identifier::new(identifier, TokenPosition::empty()),
-            &ast::class::TypeDescriptor::Simple(Identifier::new(target, TokenPosition::empty())),
+            &Identifier::new(identifier),
+            &ast::class::TypeDescriptor::Simple(Identifier::new(target)),
         )
     }
 
@@ -496,7 +493,48 @@ impl TypeSystem {
                 position,
             ),
         }
-        // Ok((value.clone(), InferredType::Maybe(self.builtin_number())))
+    }
+
+    pub fn try_convert_type(
+        &self,
+        asm: Option<&mut FunctionAssembler>,
+        from: &InferredType,
+        to: &InferredType,
+        position: TokenPosition,
+    ) -> Result<bool, CompileError> {
+        let Some(src_type) = from.optimistic_type().and_then(|v| self.resolve(v)) else {
+            return Err(CompileError::could_not_infer2(position));
+        };
+        let Some(dest_type) = to.optimistic_type().and_then(|v| self.resolve(v)) else {
+            return Err(CompileError::could_not_infer2(position));
+        };
+
+        let Some(src_type) = src_type.primitive_type().filter(|v| *v != Primitive::Void) else {
+            return Err(CompileError::cast_error(
+                src_type.identifier(),
+                dest_type.identifier(),
+                position,
+            ));
+        };
+        let Some(dest_type) = dest_type.primitive_type().filter(|v| *v != Primitive::Void) else {
+            return Err(CompileError::cast_error(
+                src_type.as_str(),
+                dest_type.identifier(),
+                position,
+            ));
+        };
+
+        if let Some(asm) = asm {
+            if src_type != dest_type
+                && (src_type.bits_of() != dest_type.bits_of()
+                    || src_type.is_float()
+                    || dest_type.is_float())
+            {
+                asm.ir_cast(dest_type.type_id(), src_type.type_id())?;
+            }
+        }
+
+        Ok(true)
     }
 
     #[inline]
@@ -661,7 +699,6 @@ impl TypeDescriptor {
         match self.kind() {
             TypeKind::Primitive(pritive) => {
                 let ch = match pritive {
-                    Primitive::Bool => 'b',
                     Primitive::F32 => 'f',
                     Primitive::F64 => 'd',
                     Primitive::Void => 'v',

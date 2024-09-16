@@ -4,7 +4,7 @@ use super::{BlockInstType, Code};
 use crate::*;
 use ir::Module;
 use leb128::{Leb128Writer, WriteLeb128};
-use toyir::CodeStreamIter;
+use toyir::{CodeStreamIter, Primitive};
 use types::ValType;
 use wasm::opcode::WasmOpcode;
 
@@ -143,9 +143,9 @@ impl FromToyIR {
 
                 TIR::I64Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
-                    let const_low = Self::get_params(tir.params(), 1)?;
+                    let const_lo = Self::get_params(tir.params(), 1)?;
                     let const_hi = Self::get_params(tir.params(), 2)?;
-                    let const_val = ((const_hi as u64) << 32) | (const_low as u64);
+                    let const_val = ((const_hi as u64) << 32) | (const_lo as u64);
                     value_stack.push(ssa_index, ValType::I64);
 
                     writer.write(WasmOpcode::I64Const).unwrap();
@@ -161,9 +161,9 @@ impl FromToyIR {
                 }
                 TIR::F64Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
-                    let const_low = Self::get_params(tir.params(), 1)?;
+                    let const_lo = Self::get_params(tir.params(), 1)?;
                     let const_hi = Self::get_params(tir.params(), 2)?;
-                    let const_val = ((const_hi as u64) << 32) | (const_low as u64);
+                    let const_val = ((const_hi as u64) << 32) | (const_lo as u64);
                     value_stack.push(ssa_index, ValType::F64);
 
                     writer.write(WasmOpcode::F64Const).unwrap();
@@ -366,6 +366,299 @@ impl FromToyIR {
                         _ => {
                             return Err(AssembleError::internal_inconsistency(
                                 &format!("invalid operator '{}' for type '{}'", opcode, val_type),
+                                ErrorPosition::Unspecified,
+                            ))
+                        }
+                    }
+                }
+
+                // type cast
+                TIR::Cast => {
+                    let result = Self::get_params(tir.params(), 0)?;
+                    let operand = Self::get_params(tir.params(), 1)?;
+                    let new_type_id = Self::get_params(tir.params(), 2)?;
+                    let old_type_id = Self::get_params(tir.params(), 3)?;
+
+                    let new_type = Primitive::from_type_id(new_type_id).ok_or(
+                        AssembleError::internal_inconsistency(
+                            &format!("invalid cast for type '{}'", new_type_id),
+                            ErrorPosition::Unspecified,
+                        ),
+                    )?;
+                    let new_val_type = new_type.wasm_binding().unwrap();
+
+                    let old_type = Primitive::from_type_id(old_type_id).ok_or(
+                        AssembleError::internal_inconsistency(
+                            &format!("invalid cast for type '{}'", old_type_id),
+                            ErrorPosition::Unspecified,
+                        ),
+                    )?;
+                    let old_val_type = old_type.wasm_binding().unwrap();
+
+                    value_stack.expect_type(operand, old_val_type)?;
+                    value_stack.push(result, new_val_type);
+
+                    match (old_type, new_type) {
+                        (Primitive::I8, Primitive::I8)
+                        | (Primitive::I8, Primitive::U8)
+                        | (Primitive::I16, Primitive::I16)
+                        | (Primitive::I16, Primitive::U16)
+                        | (Primitive::I32, Primitive::I32)
+                        | (Primitive::I32, Primitive::U32)
+                        | (Primitive::I64, Primitive::I64)
+                        | (Primitive::I64, Primitive::U64)
+                        | (Primitive::U8, Primitive::I8)
+                        | (Primitive::U8, Primitive::U8)
+                        | (Primitive::U16, Primitive::I16)
+                        | (Primitive::U16, Primitive::U16)
+                        | (Primitive::U32, Primitive::I32)
+                        | (Primitive::U32, Primitive::U32)
+                        | (Primitive::U64, Primitive::I64)
+                        | (Primitive::U64, Primitive::U64)
+                        | (Primitive::F32, Primitive::F32)
+                        | (Primitive::F64, Primitive::F64) => {}
+
+                        (Primitive::I8, Primitive::I16)
+                        | (Primitive::I8, Primitive::I32)
+                        | (Primitive::I8, Primitive::U16)
+                        | (Primitive::I8, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32Extend8S).unwrap();
+                        }
+                        (Primitive::I8, Primitive::I64) | (Primitive::I8, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64ExtendI32S).unwrap();
+                            writer.write(WasmOpcode::I64Extend8S).unwrap();
+                        }
+                        (Primitive::I8, Primitive::F32) => {
+                            writer.write(WasmOpcode::I32Extend8S).unwrap();
+                            writer.write(WasmOpcode::F32ConvertI32S).unwrap();
+                        }
+                        (Primitive::I8, Primitive::F64) => {
+                            writer.write(WasmOpcode::I32Extend8S).unwrap();
+                            writer.write(WasmOpcode::F64ConvertI32S).unwrap();
+                        }
+
+                        (Primitive::U8, Primitive::I16)
+                        | (Primitive::U8, Primitive::I32)
+                        | (Primitive::U8, Primitive::U16)
+                        | (Primitive::U8, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32Const).unwrap();
+                            writer.write(0xFFi32).unwrap();
+                            writer.write(WasmOpcode::I32And).unwrap();
+                        }
+                        (Primitive::U8, Primitive::I64) | (Primitive::U8, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64ExtendI32U).unwrap();
+                            writer.write(WasmOpcode::I64Const).unwrap();
+                            writer.write(0xFFi64).unwrap();
+                            writer.write(WasmOpcode::I64And).unwrap();
+                        }
+                        (Primitive::U8, Primitive::F32) => {
+                            writer.write(WasmOpcode::I32Const).unwrap();
+                            writer.write(0xFFi32).unwrap();
+                            writer.write(WasmOpcode::I32And).unwrap();
+                            writer.write(WasmOpcode::F32ConvertI32U).unwrap();
+                        }
+                        (Primitive::U8, Primitive::F64) => {
+                            writer.write(WasmOpcode::I32Const).unwrap();
+                            writer.write(0xFFi32).unwrap();
+                            writer.write(WasmOpcode::I32And).unwrap();
+                            writer.write(WasmOpcode::F64ConvertI32U).unwrap();
+                        }
+
+                        (Primitive::I16, Primitive::I8) | (Primitive::I16, Primitive::U8) => {}
+                        (Primitive::I16, Primitive::I32) | (Primitive::I16, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32Extend16S).unwrap();
+                        }
+                        (Primitive::I16, Primitive::I64) | (Primitive::I16, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64ExtendI32S).unwrap();
+                            writer.write(WasmOpcode::I64Extend16S).unwrap();
+                        }
+                        (Primitive::I16, Primitive::F32) => {
+                            writer.write(WasmOpcode::I64ExtendI32S).unwrap();
+                            writer.write(WasmOpcode::F32ConvertI32S).unwrap();
+                        }
+                        (Primitive::I16, Primitive::F64) => {
+                            writer.write(WasmOpcode::I64ExtendI32S).unwrap();
+                            writer.write(WasmOpcode::F64ConvertI32S).unwrap();
+                        }
+
+                        (Primitive::U16, Primitive::I8) | (Primitive::U16, Primitive::U8) => {}
+                        (Primitive::U16, Primitive::I32) | (Primitive::U16, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32Const).unwrap();
+                            writer.write(0xFFFFi32).unwrap();
+                            writer.write(WasmOpcode::I32And).unwrap();
+                        }
+                        (Primitive::U16, Primitive::I64) | (Primitive::U16, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64ExtendI32U).unwrap();
+                            writer.write(WasmOpcode::I64Const).unwrap();
+                            writer.write(0xFFFFi64).unwrap();
+                            writer.write(WasmOpcode::I64And).unwrap();
+                        }
+                        (Primitive::U16, Primitive::F32) => {
+                            writer.write(WasmOpcode::I32Const).unwrap();
+                            writer.write(0xFFFFi32).unwrap();
+                            writer.write(WasmOpcode::I32And).unwrap();
+                            writer.write(WasmOpcode::F32ConvertI32S).unwrap();
+                        }
+                        (Primitive::U16, Primitive::F64) => {
+                            writer.write(WasmOpcode::I32Const).unwrap();
+                            writer.write(0xFFFFi32).unwrap();
+                            writer.write(WasmOpcode::I32And).unwrap();
+                            writer.write(WasmOpcode::F64ConvertI32S).unwrap();
+                        }
+
+                        (Primitive::I32, Primitive::I8)
+                        | (Primitive::I32, Primitive::U8)
+                        | (Primitive::I32, Primitive::I16)
+                        | (Primitive::I32, Primitive::U16) => {}
+                        (Primitive::I32, Primitive::I64) | (Primitive::I32, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64ExtendI32S).unwrap();
+                        }
+                        (Primitive::I32, Primitive::F32) => {
+                            writer.write(WasmOpcode::F32ConvertI32S).unwrap();
+                        }
+                        (Primitive::I32, Primitive::F64) => {
+                            writer.write(WasmOpcode::F64ConvertI32S).unwrap();
+                        }
+
+                        (Primitive::U32, Primitive::I8)
+                        | (Primitive::U32, Primitive::U8)
+                        | (Primitive::U32, Primitive::I16)
+                        | (Primitive::U32, Primitive::U16) => {}
+                        (Primitive::U32, Primitive::I64) | (Primitive::U32, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64ExtendI32U).unwrap();
+                        }
+                        (Primitive::U32, Primitive::F32) => {
+                            writer.write(WasmOpcode::F32ConvertI32U).unwrap();
+                        }
+                        (Primitive::U32, Primitive::F64) => {
+                            writer.write(WasmOpcode::F64ConvertI32U).unwrap();
+                        }
+
+                        (Primitive::I64, Primitive::I8)
+                        | (Primitive::I64, Primitive::U8)
+                        | (Primitive::I64, Primitive::I16)
+                        | (Primitive::I64, Primitive::U16)
+                        | (Primitive::I64, Primitive::I32)
+                        | (Primitive::I64, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32WrapI64).unwrap();
+                        }
+                        (Primitive::I64, Primitive::F32) => {
+                            writer.write(WasmOpcode::F32ConvertI64S).unwrap();
+                        }
+                        (Primitive::I64, Primitive::F64) => {
+                            writer.write(WasmOpcode::F64ConvertI64S).unwrap();
+                        }
+
+                        (Primitive::U64, Primitive::I8)
+                        | (Primitive::U64, Primitive::U8)
+                        | (Primitive::U64, Primitive::I16)
+                        | (Primitive::U64, Primitive::U16)
+                        | (Primitive::U64, Primitive::I32)
+                        | (Primitive::U64, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32WrapI64).unwrap();
+                        }
+                        (Primitive::U64, Primitive::F32) => {
+                            writer.write(WasmOpcode::F32ConvertI64U).unwrap();
+                        }
+                        (Primitive::U64, Primitive::F64) => {
+                            writer.write(WasmOpcode::F64ConvertI64U).unwrap();
+                        }
+
+                        (Primitive::F32, Primitive::I8) => {
+                            writer.write(WasmOpcode::F32Const).unwrap();
+                            writer.write(-128.0f32).unwrap();
+                            writer.write(WasmOpcode::F32Max).unwrap();
+                            writer.write(WasmOpcode::F32Const).unwrap();
+                            writer.write(127.0f32).unwrap();
+                            writer.write(WasmOpcode::F32Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF32S).unwrap();
+                        }
+                        (Primitive::F32, Primitive::U8) => {
+                            writer.write(WasmOpcode::F32Const).unwrap();
+                            writer.write(255.0f32).unwrap();
+                            writer.write(WasmOpcode::F32Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF32U).unwrap();
+                        }
+                        (Primitive::F32, Primitive::I16) => {
+                            writer.write(WasmOpcode::F32Const).unwrap();
+                            writer.write(-32768.0f32).unwrap();
+                            writer.write(WasmOpcode::F32Max).unwrap();
+                            writer.write(WasmOpcode::F32Const).unwrap();
+                            writer.write(32767.0f32).unwrap();
+                            writer.write(WasmOpcode::F32Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF32S).unwrap();
+                        }
+                        (Primitive::F32, Primitive::U16) => {
+                            writer.write(WasmOpcode::F32Const).unwrap();
+                            writer.write(65535.0f32).unwrap();
+                            writer.write(WasmOpcode::F32Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF32U).unwrap();
+                        }
+                        (Primitive::F32, Primitive::I32) => {
+                            writer.write(WasmOpcode::I32TruncSatF32S).unwrap();
+                        }
+                        (Primitive::F32, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32TruncSatF32U).unwrap();
+                        }
+                        (Primitive::F32, Primitive::I64) => {
+                            writer.write(WasmOpcode::I64TruncSatF32S).unwrap();
+                        }
+                        (Primitive::F32, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64TruncSatF32U).unwrap();
+                        }
+                        (Primitive::F32, Primitive::F64) => {
+                            writer.write(WasmOpcode::F64PromoteF32).unwrap();
+                        }
+
+                        (Primitive::F64, Primitive::I8) => {
+                            writer.write(WasmOpcode::F64Const).unwrap();
+                            writer.write(-128.0f64).unwrap();
+                            writer.write(WasmOpcode::F64Max).unwrap();
+                            writer.write(WasmOpcode::F64Const).unwrap();
+                            writer.write(127.0f64).unwrap();
+                            writer.write(WasmOpcode::F64Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF64S).unwrap();
+                        }
+                        (Primitive::F64, Primitive::U8) => {
+                            writer.write(WasmOpcode::F64Const).unwrap();
+                            writer.write(255.0f64).unwrap();
+                            writer.write(WasmOpcode::F64Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF64U).unwrap();
+                        }
+                        (Primitive::F64, Primitive::I16) => {
+                            writer.write(WasmOpcode::F64Const).unwrap();
+                            writer.write(-32768.0f64).unwrap();
+                            writer.write(WasmOpcode::F64Max).unwrap();
+                            writer.write(WasmOpcode::F64Const).unwrap();
+                            writer.write(32767.0f64).unwrap();
+                            writer.write(WasmOpcode::F64Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF64S).unwrap();
+                        }
+                        (Primitive::F64, Primitive::U16) => {
+                            writer.write(WasmOpcode::F64Const).unwrap();
+                            writer.write(65535.0f64).unwrap();
+                            writer.write(WasmOpcode::F64Min).unwrap();
+                            writer.write(WasmOpcode::I32TruncSatF64U).unwrap();
+                        }
+                        (Primitive::F64, Primitive::I32) => {
+                            writer.write(WasmOpcode::I32TruncSatF64S).unwrap();
+                        }
+                        (Primitive::F64, Primitive::U32) => {
+                            writer.write(WasmOpcode::I32TruncSatF64U).unwrap();
+                        }
+                        (Primitive::F64, Primitive::I64) => {
+                            writer.write(WasmOpcode::I64TruncSatF64S).unwrap();
+                        }
+                        (Primitive::F64, Primitive::U64) => {
+                            writer.write(WasmOpcode::I64TruncSatF64U).unwrap();
+                        }
+                        (Primitive::F64, Primitive::F32) => {
+                            writer.write(WasmOpcode::F32DemoteF64).unwrap();
+                        }
+
+                        (Primitive::Void, _) | (_, Primitive::Void) => {
+                            return Err(AssembleError::internal_inconsistency(
+                                &format!("invalid cast '{}' for type '{}'", new_type, old_type),
                                 ErrorPosition::Unspecified,
                             ))
                         }

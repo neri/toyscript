@@ -62,8 +62,7 @@ impl ValType {
 impl WasmBinding<ValType, ()> for Primitive {
     fn wasm_binding(&self) -> Result<ValType, ()> {
         match self {
-            Primitive::Bool
-            | Primitive::I8
+            Primitive::I8
             | Primitive::U8
             | Primitive::I16
             | Primitive::U16

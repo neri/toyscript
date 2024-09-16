@@ -9,6 +9,7 @@ fn main() {
         make_primitive(
             "./src/misc/primitive.csv",
             "./src/_generated/primitive.rs",
+            "./src/_generated/opt_cast.rs",
             "Primitive",
             "ToyScript Primitive Types",
         );
@@ -32,6 +33,7 @@ struct PrimitiveTypeDesc {
     size_of: usize,
     align_of: usize,
     kind: TypeKind,
+    type_id: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,16 +56,34 @@ impl TypeKind {
     }
 }
 
-fn make_primitive(src_path: &str, dest_path: &str, class_name: &str, comment: &str) {
+//
+fn make_primitive(
+    src_path: &str,
+    dest_path: &str,
+    dest_path_opt: &str,
+    class_name: &str,
+    comment: &str,
+) {
     let mut primitives = BTreeMap::<String, PrimitiveTypeDesc>::new();
 
     for line in read_to_string(src_path).unwrap().lines().skip(1) {
+        if line.starts_with("#") {
+            continue;
+        }
         let mut cols = line.split(",");
         let name = cols.next().unwrap().to_owned();
         let bits = cols.next().unwrap().parse::<usize>().unwrap();
         let size_of = cols.next().unwrap().parse::<usize>().unwrap();
         let align_of = cols.next().unwrap().parse::<usize>().unwrap();
         let kind = TypeKind::from_str(cols.next().unwrap()).unwrap();
+
+        let is_unsigned = matches!(kind, TypeKind::Unsigned);
+        let is_float = matches!(kind, TypeKind::Float);
+        let type_id = if matches!(kind, TypeKind::Void) {
+            0
+        } else {
+            (is_unsigned as u32) + ((is_float as u32) << 1) + ((size_of as u32) << 2)
+        };
 
         let primitive = PrimitiveTypeDesc {
             name: name.clone(),
@@ -72,6 +92,7 @@ fn make_primitive(src_path: &str, dest_path: &str, class_name: &str, comment: &s
             size_of,
             align_of,
             kind,
+            type_id,
         };
 
         for item in primitives.values() {
@@ -98,15 +119,20 @@ fn make_primitive(src_path: &str, dest_path: &str, class_name: &str, comment: &s
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// {comment}
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum {class_name} {{
 "
     )
     .unwrap();
-    for keyword in primitives.keys() {
-        writeln!(os, "    /// \"{}\"", keyword).unwrap();
-        writeln!(os, "    {},", to_camel_case_identifier(keyword)).unwrap();
+    for type_desc in primitives.values() {
+        writeln!(os, "    /// \"{}\"", type_desc.name).unwrap();
+        writeln!(
+            os,
+            "    {} = {:#04x},",
+            to_camel_case_identifier(&type_desc.name),
+            type_desc.type_id
+        )
+        .unwrap();
     }
     write!(
         os,
@@ -297,6 +323,82 @@ impl {class_name} {{
         }}
     }}
 
+    pub const fn is_integer(&self) -> bool {{
+        match self {{
+"
+    )
+    .unwrap();
+
+    for type_desc in primitives
+        .values()
+        .filter(|v| matches!(v.kind, TypeKind::Integer | TypeKind::Unsigned))
+    {
+        writeln!(os, "            Self::{} => true,", type_desc.identifier,).unwrap();
+    }
+
+    write!(
+        os,
+        "            _ => false
+        }}
+    }}
+
+    pub const fn is_float(&self) -> bool {{
+        match self {{
+"
+    )
+    .unwrap();
+
+    for type_desc in primitives
+        .values()
+        .filter(|v| matches!(v.kind, TypeKind::Float))
+    {
+        writeln!(os, "            Self::{} => true,", type_desc.identifier,).unwrap();
+    }
+
+    write!(
+        os,
+        "            _ => false
+        }}
+    }}
+
+    /// generic type id
+    /// 
+    /// sum of:
+    ///     (is_unsigned: 1)
+    ///     (is_float: 2)
+    ///     (size_of_type << 2)
+    #[inline]
+    pub const fn type_id(&self) -> u32 {{
+        *self as u32
+    }}
+
+    pub fn from_type_id(v: u32) -> Option<Self> {{
+        match v {{
+"
+    )
+    .unwrap();
+
+    let mut types = primitives
+        .values()
+        .filter(|v| v.type_id != 0)
+        .collect::<Vec<_>>();
+    types.sort_by(|a, b| a.type_id.cmp(&b.type_id));
+
+    for type_desc in types.iter() {
+        writeln!(
+            os,
+            "            {:#04x} => Some(Self::{}),",
+            type_desc.type_id, type_desc.identifier,
+        )
+        .unwrap();
+    }
+
+    write!(
+        os,
+        "            _ => None
+        }}
+    }}
+
 }}
 
 impl core::fmt::Display for {class_name} {{
@@ -308,6 +410,75 @@ impl core::fmt::Display for {class_name} {{
 impl core::fmt::Debug for {class_name} {{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {{
         write!(f, \"{{:?}}\", self.as_str())
+    }}
+}}
+"
+    )
+    .unwrap();
+
+    drop(os);
+
+    let mut os = File::create(dest_path_opt).unwrap();
+
+    write!(
+        os,
+        "//! Optimize constant casts
+
+/* This file is generated automatically. DO NOT EDIT DIRECTLY. */
+
+use super::*;
+
+#[inline]
+pub(super) fn opt_cast(
+    opt: &mut MinimalCodeOptimizer,
+    old_type: Primitive, 
+    new_type: Primitive, 
+    const_val: Constant,
+    base: ArrayIndex, 
+    target: ArrayIndex, 
+    result: CodeIndex,
+) -> Result<bool, OptimizeError> {{
+    match (old_type, new_type, const_val) {{
+"
+    )
+    .unwrap();
+
+    for src_type in types.iter() {
+        for dest_type in types.iter() {
+            let src_const_class = match src_type.identifier.as_str() {
+                "I8" | "I16" | "U8" | "U16" | "U32" | "I32" => "I32",
+                "I64" | "U64" => "I64",
+                class => class,
+            };
+            let dest_const_class = match dest_type.identifier.as_str() {
+                "I8" | "I16" | "U8" | "U16" | "U32" | "I32" => "I32",
+                "I64" | "U64" => "I64",
+                class => class,
+            };
+
+            write!(
+                os,
+                "        (Primitive::{}, Primitive::{}, Constant::{}(const_val)) => {{
+            opt.replace_nop(target)?;
+            opt.replace_{}_const(base, result, ((const_val as {}) as {}) as {})?;
+            Ok(true)
+        }},
+",
+                src_type.identifier,
+                dest_type.identifier,
+                src_const_class,
+                dest_const_class.to_lowercase(),
+                src_type.identifier.to_lowercase(),
+                dest_type.identifier.to_lowercase(),
+                dest_const_class.to_lowercase(),
+            )
+            .unwrap();
+        }
+    }
+
+    write!(
+        os,
+        "        _ => todo!()
     }}
 }}
 "
@@ -342,7 +513,7 @@ fn make_irop(src_path: &str, dest_path: &str, class_name: &str, comment: &str) {
             kinds.push(kind);
         }
     }
-    // keywords.sort();
+    keywords.sort();
 
     let mut os = File::create(dest_path).unwrap();
 

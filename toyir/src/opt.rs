@@ -1,11 +1,15 @@
 //! Minimal Code Optimizer
 
+#[path = "./_generated/opt_cast.rs"]
+mod opt_cast;
+
 use super::*;
 use core::{
     mem::transmute,
     ops::{BitAnd, BitOr, BitXor},
 };
 use error::OptimizeError;
+use opt_cast::opt_cast;
 
 pub struct MinimalCodeOptimizer {
     positions: Vec<ArrayIndex>,
@@ -226,6 +230,24 @@ impl MinimalCodeOptimizer {
                         }
                     }
 
+                    Op::Cast => {
+                        let target = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
+                        if let Some(const_val) = self.get_const(target)? {
+                            let result = CodeIndex(self.param(base, len, 1)?);
+                            let new_type_id = self.param(base, len, 3)?;
+                            let old_type_id = self.param(base, len, 4)?;
+
+                            let new_type = Primitive::from_type_id(new_type_id).ok_or(
+                                OptimizeError::TypeCastError(target.as_usize(), new_type_id),
+                            )?;
+                            let old_type = Primitive::from_type_id(old_type_id).ok_or(
+                                OptimizeError::TypeCastError(target.as_usize(), old_type_id),
+                            )?;
+
+                            opt_cast(self, old_type, new_type, const_val, base, target, result)?;
+                        }
+                    }
+
                     Op::Nop
                     | Op::UnaryNop
                     | Op::DropRight
@@ -425,6 +447,7 @@ impl MinimalCodeOptimizer {
                     // unary
                     // %n = op %n
                     Op::UnaryNop
+                    | Op::Cast
                     | Op::BrIf
                     | Op::Clz
                     | Op::Ctz
@@ -597,6 +620,7 @@ impl MinimalCodeOptimizer {
 
             // unop
             Op::UnaryNop
+            | Op::Cast
             | Op::Clz
             | Op::Ctz
             | Op::Dec
