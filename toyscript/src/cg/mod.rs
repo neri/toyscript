@@ -620,8 +620,6 @@ impl CodeGen {
                 | BinaryOperator::AssignBitXor
                 | BinaryOperator::AssignShl
                 | BinaryOperator::AssignShr
-                | BinaryOperator::Identical
-                | BinaryOperator::NotIdentical
                 | BinaryOperator::Add
                 | BinaryOperator::Sub
                 | BinaryOperator::Mul
@@ -647,7 +645,9 @@ impl CodeGen {
                 | BinaryOperator::Lt
                 | BinaryOperator::Gt
                 | BinaryOperator::Le
-                | BinaryOperator::Ge => {
+                | BinaryOperator::Ge
+                | BinaryOperator::Identical
+                | BinaryOperator::NotIdentical => {
                     let cmp_type = scope.types().infer_as(
                         inferred_to,
                         &scope.types().builtin_boolean(),
