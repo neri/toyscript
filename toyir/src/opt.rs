@@ -138,8 +138,6 @@ impl MinimalCodeOptimizer {
                     | Op::Or
                     | Op::RemS
                     | Op::RemU
-                    | Op::Rotl
-                    | Op::Rotr
                     | Op::Shl
                     | Op::ShrS
                     | Op::ShrU
@@ -254,8 +252,6 @@ impl MinimalCodeOptimizer {
                     | Op::Drop2
                     | Op::Block
                     | Op::Call
-                    | Op::Clz
-                    | Op::Ctz
                     | Op::Dec
                     | Op::End
                     | Op::F32Const
@@ -265,7 +261,6 @@ impl MinimalCodeOptimizer {
                     | Op::Inc
                     | Op::Loop
                     | Op::Not
-                    | Op::Popcnt
                     | Op::Neg => {}
                 }
             }
@@ -449,13 +444,10 @@ impl MinimalCodeOptimizer {
                     Op::UnaryNop
                     | Op::Cast
                     | Op::BrIf
-                    | Op::Clz
-                    | Op::Ctz
                     | Op::Dec
                     | Op::Eqz
                     | Op::Inc
                     | Op::Not
-                    | Op::Popcnt
                     | Op::Neg => {
                         for i in 1..=2 {
                             self.rename(&ren_tbl, base, len, i)?;
@@ -483,8 +475,6 @@ impl MinimalCodeOptimizer {
                     | Op::Or
                     | Op::RemS
                     | Op::RemU
-                    | Op::Rotl
-                    | Op::Rotr
                     | Op::Shl
                     | Op::ShrS
                     | Op::ShrU
@@ -586,8 +576,6 @@ impl MinimalCodeOptimizer {
             | Op::Or
             | Op::RemS
             | Op::RemU
-            | Op::Rotl
-            | Op::Rotr
             | Op::Shl
             | Op::ShrS
             | Op::ShrU
@@ -619,16 +607,7 @@ impl MinimalCodeOptimizer {
             }
 
             // unop
-            Op::UnaryNop
-            | Op::Cast
-            | Op::Clz
-            | Op::Ctz
-            | Op::Dec
-            | Op::Eqz
-            | Op::Inc
-            | Op::Not
-            | Op::Popcnt
-            | Op::Neg => {
+            Op::UnaryNop | Op::Cast | Op::Dec | Op::Eqz | Op::Inc | Op::Not | Op::Neg => {
                 let operand2 = self.param(base, len, 2)?;
                 if self.chain_drop(CodeIndex(operand2))? {
                     self.replace_nop(base)?;
@@ -698,8 +677,6 @@ impl MinimalCodeOptimizer {
                     Op::Shl => lhs.wrapping_shl(rhs as u32),
                     Op::ShrS => lhs.wrapping_shr(rhs as u32),
                     Op::ShrU => (lhs as u32).wrapping_shr(rhs as u32) as i32,
-                    Op::Rotl => lhs.rotate_left(rhs as u32),
-                    Op::Rotr => lhs.rotate_right(rhs as u32),
 
                     _ => return Ok(false),
                 };
@@ -739,8 +716,6 @@ impl MinimalCodeOptimizer {
                     Op::Shl => lhs.wrapping_shl(rhs as u32),
                     Op::ShrS => lhs.wrapping_shr(rhs as u32),
                     Op::ShrU => (lhs as u64).wrapping_shr(rhs as u32) as i64,
-                    Op::Rotl => lhs.rotate_left(rhs as u32),
-                    Op::Rotr => lhs.rotate_right(rhs as u32),
 
                     _ => return Ok(false),
                 };
@@ -782,15 +757,7 @@ impl MinimalCodeOptimizer {
             // binop (???, 0)
             if rhs_const == 0 {
                 match opcode {
-                    Op::Add
-                    | Op::Sub
-                    | Op::Or
-                    | Op::Xor
-                    | Op::Shl
-                    | Op::ShrS
-                    | Op::ShrU
-                    | Op::Rotl
-                    | Op::Rotr => {
+                    Op::Add | Op::Sub | Op::Or | Op::Xor | Op::Shl | Op::ShrS | Op::ShrU => {
                         self.replace_nop(rhs_a)?;
                         self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
                         return Ok(true);
@@ -870,9 +837,7 @@ impl MinimalCodeOptimizer {
                     | Op::And
                     | Op::Shl
                     | Op::ShrS
-                    | Op::ShrU
-                    | Op::Rotl
-                    | Op::Rotr => {
+                    | Op::ShrU => {
                         if self.chain_drop(rhs)? {
                             self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
                         } else {
@@ -889,15 +854,7 @@ impl MinimalCodeOptimizer {
             // binop (???, 0)
             if rhs_const == 0 {
                 match opcode {
-                    Op::Add
-                    | Op::Sub
-                    | Op::Or
-                    | Op::Xor
-                    | Op::Shl
-                    | Op::ShrS
-                    | Op::ShrU
-                    | Op::Rotl
-                    | Op::Rotr => {
+                    Op::Add | Op::Sub | Op::Or | Op::Xor | Op::Shl | Op::ShrS | Op::ShrU => {
                         self.replace_nop(rhs_a)?;
                         self.replace(base, Op::UnaryNop, &[result.0, lhs.0])?;
                         return Ok(true);

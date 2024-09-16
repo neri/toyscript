@@ -213,9 +213,7 @@ impl FromToyIR {
                 | TIR::ShrU
                 | TIR::And
                 | TIR::Or
-                | TIR::Xor
-                | TIR::Rotl
-                | TIR::Rotr => {
+                | TIR::Xor => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let lhs_i = Self::get_params(tir.params(), 1)?;
                     let rhs_i = Self::get_params(tir.params(), 2)?;
@@ -284,7 +282,7 @@ impl FromToyIR {
                 }
 
                 // unop
-                TIR::Eqz | TIR::Clz | TIR::Ctz | TIR::Popcnt | TIR::Neg => {
+                TIR::Eqz | TIR::Neg => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let operand = Self::get_params(tir.params(), 1)?;
                     let val_type = value_stack.expect(operand)?;
