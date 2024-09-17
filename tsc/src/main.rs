@@ -82,7 +82,7 @@ fn main() {
 
     match mode {
         OperationMode::Default => {
-            let binary = match ToyScript::to_wasm(path_input.as_str(), src.into_bytes()) {
+            let binary = match ToyScript::compile(path_input.as_str(), src.into_bytes()) {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!("{}", err);

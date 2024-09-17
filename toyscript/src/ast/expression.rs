@@ -155,7 +155,6 @@ impl Expression {
         let ending_tokens = allowed_ending.unwrap_or(&Self::DEFAULT_ENDING);
 
         tokens.skip_ignorable();
-        // Self::skip_blank(tokens);
 
         let position_start = tokens.peek().unwrap().position().start();
         let mut items = Vec::new();
@@ -169,11 +168,6 @@ impl Expression {
             }
         }
 
-        // if tokens.expect_symbol('(').is_ok() {
-        //     let expr = Self::parse(tokens, ending_mode!(')'))?;
-        //     expect_symbol(tokens, ')')?;
-        //     items.push(FlatUnary::Parenthesis(expr));
-        // } else
         if let Some(token) = tokens.shift() {
             match token.token_type() {
                 TokenType::Symbol('(') => {

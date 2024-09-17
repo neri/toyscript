@@ -24,13 +24,6 @@ impl Identifier {
     }
 
     #[inline]
-    pub fn from_keyword(keyword: Keyword, id_position: TokenPosition) -> Self {
-        Self {
-            str: ArcStringSlice::from_str(keyword.as_str(), id_position),
-        }
-    }
-
-    #[inline]
     pub fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Self, CompileError> {
         let id_token = expect(tokens, &[TokenType::Identifier])?;
         Self::parse(id_token, tokens)
