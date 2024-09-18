@@ -34,4 +34,4 @@ function print_num(i: int) {
     }
 }
 
-import function putchar(c: char) from "env"
+declare function putchar(c: char)

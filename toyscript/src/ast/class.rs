@@ -4,12 +4,16 @@ use crate::{
     keyword::{Keyword, ModifierFlag},
     *,
 };
-use ast::{expression::Expression, typeparam::TypeParameter};
+use ast::{
+    decoration::Decoration, expression::Expression, function::FunctionSyntaxFlavor,
+    typeparam::TypeParameter,
+};
 use core::ops::ControlFlow;
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
 pub struct ClassDeclaration {
+    decorations: Vec<Decoration>,
     modifiers: ModifierFlag,
     identifier: Identifier,
     type_params: Vec<TypeParameter>,
@@ -21,6 +25,7 @@ pub struct ClassDeclaration {
 
 impl ClassDeclaration {
     pub fn parse(
+        decorations: Vec<Decoration>,
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
@@ -98,6 +103,8 @@ impl ClassDeclaration {
                             MemberKind::Function => {
                                 tokens.unshift();
                                 let member = FunctionDeclaration::parse(
+                                    FunctionSyntaxFlavor::Class,
+                                    Vec::new(),
                                     modifiers.as_slice(),
                                     token,
                                     tokens,
@@ -118,6 +125,7 @@ impl ClassDeclaration {
             .merged(&tokens.peek_last().unwrap().position());
 
         Ok(Self {
+            decorations,
             modifiers,
             identifier,
             type_params,
@@ -126,6 +134,11 @@ impl ClassDeclaration {
             functions: functions.into_boxed_slice(),
             position,
         })
+    }
+
+    #[inline]
+    pub fn decorations(&self) -> &[Decoration] {
+        &self.decorations
     }
 
     #[inline]
@@ -172,6 +185,7 @@ enum MemberKind {
 
 #[derive(Debug)]
 pub struct EnumDeclaration {
+    decorations: Vec<Decoration>,
     modifiers: ModifierFlag,
     identifier: Identifier,
     variants: Vec<(Identifier, Option<Expression>)>,
@@ -179,6 +193,7 @@ pub struct EnumDeclaration {
 
 impl EnumDeclaration {
     pub fn parse(
+        decorations: Vec<Decoration>,
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
@@ -232,10 +247,16 @@ impl EnumDeclaration {
         }
 
         Ok(Self {
+            decorations,
             modifiers,
             identifier,
             variants,
         })
+    }
+
+    #[inline]
+    pub fn decorations(&self) -> &[Decoration] {
+        &self.decorations
     }
 
     #[inline]

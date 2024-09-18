@@ -28,16 +28,21 @@ export function add(a: int, b: int): int {
 - Interrupts execution of the innermost loop and executes the next lap of the loop.
 - Cannot be used outside of a loop.
 
-### for statement
+### declare-function statement (temp)
 
 ```
-'for' '(' expr1 ';' expr2 ';' expr3 ')' '{' expr4 '}'
+'declare' 'function' identifier '('
+[identifier ':' type (',' identifier ':' type)* [','] ]
+')' [':' type]
 ```
 
-- After executing `expr1`, evaluate `expr2` and repeat `expr4` and `expr3` for true.
-- `expr1` also permits assignment expressions with `let` statements.
-- `expr2` in this form is evaluated each time for each loop.
-- _Braces cannot be omitted_
+- Declares a function with the given identifier and argument list. The function entity is provided by an external module or environment.
+
+### declare-type statement
+
+```
+'declare' 'type' identifer '=' type
+```
 
 ### function statement
 
@@ -48,6 +53,17 @@ export function add(a: int, b: int): int {
 ```
 
 - Defines the function `identifier1`, with arguments of `identifier2n` and `type1n`, return type of `type2`, and contents of `expr`.
+
+### for statement
+
+```
+'for' '(' expr1 ';' expr2 ';' expr3 ')' '{' expr4 '}'
+```
+
+- After executing `expr1`, evaluate `expr2` and repeat `expr4` and `expr3` for true.
+- `expr1` also permits assignment expressions with `let` statements.
+- `expr2` in this form is evaluated each time for each loop.
+- _Braces cannot be omitted_
 
 ### if-else statement
 
@@ -75,12 +91,6 @@ export function add(a: int, b: int): int {
 - _Currently, not yet supported_
 - _Braces cannot be omitted_
 
-### type statement
-
-```
-'declare' 'type' identifer '=' type
-```
-
 ### var statement (let, const)
 
 ```
@@ -98,17 +108,6 @@ export function add(a: int, b: int): int {
 
 - Evaluate `expr1` and repeat `expr2` while true.
 - _Braces cannot be omitted_
-
-### import statement (temp)
-
-```
-'import' 'function' identifier '('
-[identifier ':' type (',' identifier ':' type)* [','] ]
-')' [':' type] 'from' string
-```
-
-- Declares a function with the given identifier and argument list. The function entity is provided by an external module or environment.
-- _This syntax is subject to change in the future._
 
 ## Main differences from TypeScript
 

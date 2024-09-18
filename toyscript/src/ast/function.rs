@@ -2,14 +2,15 @@
 
 use super::{block::Block, typeparam::TypeParameter, Identifier};
 use crate::{keyword::ModifierFlag, *};
-use ast::class::TypeDescriptor;
+use ast::{class::TypeDescriptor, decoration::Decoration};
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
 pub struct FunctionDeclaration {
+    decorations: Vec<Decoration>,
     modifiers: ModifierFlag,
     identifier: Identifier,
-    import_from: Option<String>,
+    import_from: Option<(String, String)>,
     type_params: Vec<TypeParameter>,
     parameters: Box<[Parameter]>,
     result_type: Option<TypeDescriptor>,
@@ -17,8 +18,16 @@ pub struct FunctionDeclaration {
     position: TokenPosition,
 }
 
+pub enum FunctionSyntaxFlavor {
+    Function,
+    Declare,
+    Class,
+}
+
 impl FunctionDeclaration {
     pub fn parse(
+        flavor: FunctionSyntaxFlavor,
+        decorations: Vec<Decoration>,
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
@@ -28,7 +37,7 @@ impl FunctionDeclaration {
             .min_by(|a, b| a.position().start().cmp(&b.position().start()))
             .unwrap_or(&decisive_token);
 
-        let modifiers = ModifierFlag::from_tokens(
+        let mut modifiers = ModifierFlag::from_tokens(
             modifier_tokens,
             &[ModifierFlag::EXPORT, ModifierFlag::IMPORT],
         )
@@ -66,35 +75,31 @@ impl FunctionDeclaration {
 
         let block;
         let import_from;
-        if modifiers.contains(ModifierFlag::IMPORT) {
-            block = Block::empty();
-
-            expect(tokens, &[TokenType::Keyword(Keyword::From)])?;
-
-            let token = expect(
-                tokens,
-                &[TokenType::StringLiteral(token::QuoteType::DoubleQuote)],
-            )?;
-            let from = token.string_literal().map_err(|e| {
-                CompileError::invalid_literal(
-                    &format!("invalid string: {:?} {:?}", e, token),
-                    token.position().into(),
-                )
-            })?;
-            import_from = Some(from.0.to_string());
-
-            expect_eol(tokens)?;
-        } else {
-            let block_begin = expect_symbol(tokens, '{')?;
-            block = Block::parse(block_begin, tokens)?;
-            import_from = None;
-        };
+        match flavor {
+            FunctionSyntaxFlavor::Function => {
+                let block_begin = expect_symbol(tokens, '{')?;
+                block = Block::parse(block_begin, tokens)?;
+                import_from = None;
+            }
+            FunctionSyntaxFlavor::Declare => {
+                block = Block::empty();
+                modifiers.remove(ModifierFlag::EXPORT);
+                import_from = Some(("env".to_owned(), identifier.as_string()));
+            }
+            FunctionSyntaxFlavor::Class => {
+                // TODO:
+                let block_begin = expect_symbol(tokens, '{')?;
+                block = Block::parse(block_begin, tokens)?;
+                import_from = None;
+            }
+        }
 
         let position = start_token
             .position()
             .merged(&tokens.peek_last().unwrap().position());
 
         Ok(FunctionDeclaration {
+            decorations,
             modifiers,
             identifier,
             import_from,
@@ -104,6 +109,11 @@ impl FunctionDeclaration {
             body: block,
             position,
         })
+    }
+
+    #[inline]
+    pub fn decorations(&self) -> &[Decoration] {
+        &self.decorations
     }
 
     #[inline]
@@ -117,8 +127,10 @@ impl FunctionDeclaration {
     }
 
     #[inline]
-    pub fn import_from(&self) -> Option<&str> {
-        self.import_from.as_ref().map(|v| v.as_str())
+    pub fn import_from(&self) -> Option<(&str, &str)> {
+        self.import_from
+            .as_ref()
+            .map(|v| (v.0.as_str(), v.1.as_str()))
     }
 
     #[inline]

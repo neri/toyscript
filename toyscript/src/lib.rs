@@ -121,17 +121,23 @@ pub(crate) fn expect_symbol(
 pub(crate) fn try_expect_eol(
     tokens: &mut TokenStream<Keyword>,
 ) -> Result<Token<Keyword>, CompileError> {
-    if let Some(token) = tokens.peek() {
-        match token.token_type() {
-            TokenType::NewLine | TokenType::Symbol(';') => {
-                return Ok(token);
+    loop {
+        if let Some(token) = tokens.peek() {
+            match token.token_type() {
+                TokenType::NewLine | TokenType::Symbol(';') => {
+                    return Ok(token);
+                }
+                TokenType::Symbol('}') => return Ok(token),
+                TokenType::LineComment | TokenType::BlockComment => {
+                    tokens.shift();
+                    continue;
+                }
+                _ => {}
             }
-            TokenType::Symbol('}') => return Ok(token),
-            _ => (),
+            return Err(CompileError::missing_eol(&token));
+        } else {
+            return Err(CompileError::missing_eol(&tokens.eof()));
         }
-        Err(CompileError::missing_eol(&token))
-    } else {
-        Err(CompileError::missing_eol(&tokens.eof()))
     }
 }
 

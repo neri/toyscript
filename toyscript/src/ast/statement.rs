@@ -4,8 +4,9 @@ use crate::{keyword::Keyword, *};
 use ast::{
     block::Block,
     class::{ClassDeclaration, EnumDeclaration, TypeDescriptor},
+    decoration::Decoration,
     expression::Expression,
-    function::FunctionDeclaration,
+    function::{FunctionDeclaration, FunctionSyntaxFlavor},
     variable::VariableDeclaration,
     Identifier,
 };
@@ -80,12 +81,18 @@ pub enum ForInit {
 impl Statement {
     pub fn parse(tokens: &mut TokenStream<Keyword>) -> Result<Self, CompileError> {
         let mut modifiers = Vec::new();
+        let mut decorations = Vec::<Decoration>::new();
         loop {
             let token = tokens.next_non_blank();
             match token.token_type() {
                 TokenType::Eof => {
                     if !modifiers.is_empty() {
                         return Err(CompileError::unexpected_token(&token));
+                    }
+                    if let Some(item) = decorations.first() {
+                        return Err(CompileError::unexpected_token(
+                            &tokens.get_raw(item.position()),
+                        ));
                     }
                     return Ok(Self::Eof(token.position()));
                 }
@@ -96,11 +103,21 @@ impl Statement {
                     }
                     match keyword {
                         Keyword::Function => {
-                            let func_decl =
-                                FunctionDeclaration::parse(modifiers.as_slice(), token, tokens)?;
+                            let func_decl = FunctionDeclaration::parse(
+                                FunctionSyntaxFlavor::Function,
+                                decorations,
+                                modifiers.as_slice(),
+                                token,
+                                tokens,
+                            )?;
                             return Ok(Self::Function(Box::new(func_decl)));
                         }
                         Keyword::Const | Keyword::Let | Keyword::Var => {
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
                             let var_decl = VariableDeclaration::parse(
                                 modifiers.as_slice(),
                                 token,
@@ -110,18 +127,31 @@ impl Statement {
                             return Ok(Self::Variable(var_decl));
                         }
                         Keyword::Class => {
-                            let class_decl =
-                                ClassDeclaration::parse(modifiers.as_slice(), token, tokens)?;
+                            let class_decl = ClassDeclaration::parse(
+                                decorations,
+                                modifiers.as_slice(),
+                                token,
+                                tokens,
+                            )?;
                             return Ok(Self::Class(Box::new(class_decl)));
                         }
                         Keyword::Enum => {
-                            let enum_decl =
-                                EnumDeclaration::parse(modifiers.as_slice(), token, tokens)?;
+                            let enum_decl = EnumDeclaration::parse(
+                                decorations,
+                                modifiers.as_slice(),
+                                token,
+                                tokens,
+                            )?;
                             return Ok(Self::Enum(Box::new(enum_decl)));
                         }
                         Keyword::For => {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
+                            }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
                             }
 
                             expect_symbol(tokens, '(')?;
@@ -156,17 +186,19 @@ impl Statement {
                         }
 
                         Keyword::Declare => {
-                            if !modifiers.is_empty() {
-                                return Err(CompileError::unexpected_token(&token));
-                            }
                             let kind = tokens.next_non_blank();
                             match kind.token_type() {
                                 TokenType::Keyword(keyword) => match keyword {
-                                    // Keyword::Function => {
-                                    //     let func_decl =
-                                    //         FunctionDeclaration::parse(&[token], kind, tokens)?;
-                                    //     return Ok(Self::Function(func_decl));
-                                    // }
+                                    Keyword::Function => {
+                                        let func_decl = FunctionDeclaration::parse(
+                                            FunctionSyntaxFlavor::Declare,
+                                            decorations,
+                                            &modifiers,
+                                            kind,
+                                            tokens,
+                                        )?;
+                                        return Ok(Self::Function(Box::new(func_decl)));
+                                    }
                                     // Keyword::Const | Keyword::Let | Keyword::Var => {
                                     //     let var_decl = VariableDeclaration::parse_declare(
                                     //         modifiers.as_slice(),
@@ -176,6 +208,14 @@ impl Statement {
                                     //     return Ok(Self::Variable(var_decl));
                                     // }
                                     Keyword::Type => {
+                                        if !modifiers.is_empty() {
+                                            return Err(CompileError::unexpected_token(&token));
+                                        }
+                                        if let Some(item) = decorations.first() {
+                                            return Err(CompileError::unexpected_token(
+                                                &tokens.get_raw(item.position()),
+                                            ));
+                                        }
                                         let identifier = Identifier::from_tokens(tokens)?;
                                         expect_symbol(tokens, '=')?;
                                         let type_desc = TypeDescriptor::expect(tokens)?;
@@ -191,6 +231,12 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
+
                             if expect_eol(tokens).is_ok() {
                                 return Ok(Self::ReturnStatement(Expression::empty_with_position(
                                     token.position(),
@@ -205,6 +251,12 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
+
                             let expr = Expression::parse(tokens, ending_mode!('{'))?;
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
@@ -231,6 +283,12 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
+
                             let expr = Expression::parse(tokens, ending_mode!('{'))?;
                             let begin_block = expect_symbol(tokens, '{')?;
                             let block = Block::parse(begin_block, tokens)?;
@@ -240,6 +298,12 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
+
                             expect_eol(tokens)?;
                             return Ok(Self::Break(token.position()));
                         }
@@ -247,6 +311,12 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
+
                             expect_eol(tokens)?;
                             return Ok(Self::Continue(token.position()));
                         }
@@ -254,6 +324,12 @@ impl Statement {
                             if !modifiers.is_empty() {
                                 return Err(CompileError::unexpected_token(&token));
                             }
+                            if let Some(item) = decorations.first() {
+                                return Err(CompileError::unexpected_token(
+                                    &tokens.get_raw(item.position()),
+                                ));
+                            }
+
                             tokens.unshift();
                             let expr = Expression::parse(tokens, None)?;
                             expect_eol(tokens)?;
@@ -265,13 +341,33 @@ impl Statement {
                     if !modifiers.is_empty() {
                         return Err(CompileError::unexpected_token(&token));
                     }
+                    if let Some(item) = decorations.first() {
+                        return Err(CompileError::unexpected_token(
+                            &tokens.get_raw(item.position()),
+                        ));
+                    }
+
                     let block = Block::parse(token, tokens)?;
                     return Ok(Self::Block(block));
+                }
+                TokenType::Symbol('@') => {
+                    if !modifiers.is_empty() {
+                        return Err(CompileError::unexpected_token(&token));
+                    }
+                    let decoration = Decoration::parse(tokens, token)?;
+                    decorations.push(decoration);
+                    continue;
                 }
                 _ => {
                     if !modifiers.is_empty() {
                         return Err(CompileError::unexpected_token(&token));
                     }
+                    if let Some(item) = decorations.first() {
+                        return Err(CompileError::unexpected_token(
+                            &tokens.get_raw(item.position()),
+                        ));
+                    }
+
                     tokens.unshift();
                     let expr = Expression::parse(tokens, None)?;
                     expect_eol(tokens)?;

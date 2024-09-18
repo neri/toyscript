@@ -132,7 +132,7 @@ impl ModifierFlag {
         let mut result = Self::empty();
         let accept = Self::combined(accept.iter());
         for token in tokens {
-            let keyword = token.clone().into_keyword().unwrap();
+            let keyword = token.clone().try_into_keyword()?;
             let new_value = match keyword.keyword() {
                 Keyword::Async => Self::ASYNC,
                 Keyword::Export => Self::EXPORT,

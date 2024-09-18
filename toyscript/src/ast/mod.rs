@@ -2,6 +2,7 @@
 
 pub mod block;
 pub mod class;
+pub mod decoration;
 pub mod expression;
 pub mod float;
 pub mod function;

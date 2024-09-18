@@ -51,7 +51,7 @@ pub enum TokenType<KEYWORD> {
     /// Broken String Literal
     BrokenString,
     /// Uncategorized
-    Uncategorized,
+    Unknown,
 }
 
 impl<KEYWORD> TokenType<KEYWORD> {
@@ -92,7 +92,7 @@ impl<KEYWORD> TokenType<KEYWORD> {
             TokenType::BrokenNumber => TokenType::BrokenNumber,
             TokenType::StringLiteral(v) => TokenType::StringLiteral(*v),
             TokenType::BrokenString => TokenType::BrokenString,
-            TokenType::Uncategorized => TokenType::Uncategorized,
+            TokenType::Unknown => TokenType::Unknown,
         }
     }
 }
@@ -710,7 +710,7 @@ impl<KEYWORD: Copy + Clone> Tokenizer<KEYWORD> {
             }
             ParserPhase::UnicodeEntity => {
                 self.fragments.push(TokenFragment::new(
-                    TokenType::Uncategorized,
+                    TokenType::Unknown,
                     self.start,
                     position_end,
                 ));
@@ -1000,7 +1000,7 @@ impl Clone for ArcStringSlice {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Token<KEYWORD> {
     str: ArcStringSlice,
     token_type: TokenType<KEYWORD>,
@@ -1028,8 +1028,19 @@ impl<KEYWORD> Token<KEYWORD> {
     }
 
     #[inline]
-    pub fn into_keyword(self) -> Result<KeywordToken<KEYWORD>, Token<KEYWORD>> {
+    pub fn try_into_keyword(self) -> Result<KeywordToken<KEYWORD>, Token<KEYWORD>> {
         KeywordToken::from_token(self)
+    }
+
+    #[inline]
+    pub fn try_into_identifier(self) -> Result<Token<KEYWORD>, Token<KEYWORD>> {
+        match self.token_type() {
+            TokenType::Keyword(_) | TokenType::Identifier => Ok(Self {
+                str: self.str,
+                token_type: TokenType::Identifier,
+            }),
+            _ => Err(self),
+        }
     }
 
     #[inline]
@@ -1411,7 +1422,19 @@ pub enum StringLiteralError {
     InvalidUnicodeChar(usize),
 }
 
-#[derive(Debug)]
+impl<KEYWORD> core::fmt::Debug for Token<KEYWORD>
+where
+    KEYWORD: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Token")
+            .field("token_type", &self.token_type)
+            .field("source", &self.source())
+            .field("position", &self.position())
+            .finish()
+    }
+}
+
 pub struct KeywordToken<KEYWORD> {
     str: ArcStringSlice,
     keyword: KEYWORD,
@@ -1461,6 +1484,18 @@ impl<KEYWORD> KeywordToken<KEYWORD> {
     #[inline]
     pub fn position(&self) -> TokenPosition {
         self.str.range
+    }
+}
+
+impl<KEYWORD> core::fmt::Debug for KeywordToken<KEYWORD>
+where
+    KEYWORD: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeywordToken")
+            .field("keyword", &self.keyword)
+            .field("position", &self.position())
+            .finish()
     }
 }
 
@@ -1592,6 +1627,13 @@ impl<KEYWORD: Copy + Clone + PartialEq> TokenStream<KEYWORD> {
             lines: self.lines.clone(),
             index: snapshot.index,
             range: snapshot.index..range_end.max(snapshot.index),
+        }
+    }
+
+    pub fn get_raw(&self, range: TokenPosition) -> Token<KEYWORD> {
+        Token {
+            str: unsafe { ArcStringSlice::from_buffer(&self.arc_buffer, range) },
+            token_type: TokenType::Unknown,
         }
     }
 

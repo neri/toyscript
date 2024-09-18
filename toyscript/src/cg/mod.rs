@@ -51,8 +51,8 @@ impl CodeGen {
 
                         module.add_import(Import::func(
                             func_desc.signature(),
-                            &func_desc.identifier().as_string(),
-                            import_from,
+                            import_from.1,
+                            import_from.0,
                             &params,
                             &results,
                         ));

@@ -1,8 +1,8 @@
 
-import function putchar(c: char) from "env"
+declare function putchar(c: char)
 
 function main() {
-  for (let i = ' '; i <'\7F'; i++) {
+  for (let i = ' '; i < 127; i++) {
     putchar(i)
   }
 }
