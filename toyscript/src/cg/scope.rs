@@ -1,7 +1,7 @@
 use crate::*;
 use ast::function::Parameter;
 use token::TokenPosition;
-use toyir::{BlockIndex, LocalIndex};
+use toyir::{BlockIndex, FunctionAssembler, LocalIndex};
 use types::{InferredType, TypeDescriptor};
 
 #[derive(Debug)]
@@ -131,11 +131,24 @@ impl Scope<'_> {
 
     #[inline]
     pub fn resolve_local(&self, identifier: &str) -> Option<LocalIndex> {
-        self.get_local(identifier)
-            .or_else(|| self.parent.and_then(|v| v.resolve_local(identifier)))
+        let mut current = self;
+        loop {
+            match current.get_local(identifier) {
+                Some(v) => return Some(v),
+                None => {}
+            }
+            match current.parent {
+                Some(v) => current = v,
+                None => return None,
+            }
+        }
     }
 
-    pub fn declare_local(&mut self, var_desc: VariableDescriptor) -> Result<(), CompileError> {
+    pub fn declare_local(
+        &mut self,
+        // asm: &mut FunctionAssembler,
+        var_desc: VariableDescriptor,
+    ) -> Result<LocalIndex, CompileError> {
         if self
             .storage
             .types
@@ -147,10 +160,13 @@ impl Scope<'_> {
         match self.get_local(var_desc.identifier().as_str()) {
             Some(_) => Err(CompileError::duplicate_identifier(&var_desc.identifier)),
             None => {
+                // let localidx = asm.alloc_local();
+                // var_desc.set_index(localidx);
+                let localidx = var_desc.index();
                 self.storage.alloc_local(var_desc.clone());
                 self.variables
                     .push((var_desc.identifier().to_string(), var_desc.index()));
-                Ok(())
+                Ok(localidx)
             }
         }
     }

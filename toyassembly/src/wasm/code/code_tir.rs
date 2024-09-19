@@ -81,7 +81,7 @@ impl FromToyIR {
                     writer.write(target).unwrap();
                 }
 
-                TIR::Call => {
+                TIR::Call | TIR::CallV => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let target = Self::get_params(tir.params(), 1)?;
 

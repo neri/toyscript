@@ -253,8 +253,8 @@ impl CompileError {
     }
 
     #[inline]
-    pub fn const_out_of_range(value: String, position: TokenPosition) -> Self {
-        let explanation = format!("Constant value '{}' is Out of range", value);
+    pub fn must_assignment(identifier: &str, position: TokenPosition) -> Self {
+        let explanation = format!("Constant {} needs assignment", identifier);
         Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
     }
 

@@ -18,6 +18,8 @@ pub enum Op {
     BrIf,
     /// "call"
     Call,
+    /// "call_v"
+    CallV,
     /// "cast"
     Cast,
     /// "dec"
@@ -115,6 +117,7 @@ impl Op {
             Self::Br,
             Self::BrIf,
             Self::Call,
+            Self::CallV,
             Self::Cast,
             Self::Dec,
             Self::DivS,
@@ -169,6 +172,7 @@ impl Op {
             "br" => Some(Self::Br),
             "br_if" => Some(Self::BrIf),
             "call" => Some(Self::Call),
+            "call_v" => Some(Self::CallV),
             "cast" => Some(Self::Cast),
             "dec" => Some(Self::Dec),
             "div_s" => Some(Self::DivS),
@@ -224,6 +228,7 @@ impl Op {
             Self::Br => "br",
             Self::BrIf => "br_if",
             Self::Call => "call",
+            Self::CallV => "call_v",
             Self::Cast => "cast",
             Self::Dec => "dec",
             Self::DivS => "div_s",
@@ -278,6 +283,7 @@ impl Op {
             Self::Br => "Br",
             Self::BrIf => "BrIf",
             Self::Call => "Call",
+            Self::CallV => "CallV",
             Self::Cast => "Cast",
             Self::Dec => "Dec",
             Self::DivS => "DivS",
@@ -332,6 +338,7 @@ impl Op {
             Self::Br => OpClass::Control,
             Self::BrIf => OpClass::Control,
             Self::Call => OpClass::Control,
+            Self::CallV => OpClass::Control,
             Self::Cast => OpClass::Control,
             Self::Dec => OpClass::UnOp,
             Self::DivS => OpClass::BinOp,

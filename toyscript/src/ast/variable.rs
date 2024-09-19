@@ -5,7 +5,7 @@ use super::Identifier;
 use crate::keyword::Keyword;
 use crate::*;
 use ast::class::TypeDescriptor;
-use token::{Token, TokenStream};
+use token::{Token, TokenPosition, TokenStream};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -14,12 +14,12 @@ pub struct VariableDeclaration {
     variables: Box<[Variable]>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Variable {
     identifier: Identifier,
     type_desc: Option<TypeDescriptor>,
     assignment: Option<Expression>,
+    position: TokenPosition,
     is_mutable: bool,
 }
 
@@ -64,6 +64,8 @@ impl VariableDeclaration {
         loop {
             let identifier = Identifier::from_tokens(tokens)?;
 
+            let position_start = identifier.id_position().start();
+
             let type_desc = if let Ok(_) = tokens.expect_symbol(':') {
                 let var_type = TypeDescriptor::expect(tokens)?;
                 Some(var_type)
@@ -78,10 +80,13 @@ impl VariableDeclaration {
                 None
             };
 
+            let position_end = tokens.peek_last().unwrap().position().end();
+
             variables.push(Variable {
                 identifier,
                 type_desc,
                 assignment,
+                position: TokenPosition::new(position_start as u32, position_end as u32),
                 is_mutable,
             });
 
@@ -105,6 +110,13 @@ impl VariableDeclaration {
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
     ) -> Result<Self, CompileError> {
+        let position_start = modifier_tokens
+            .iter()
+            .min_by(|a, b| a.position().start().cmp(&b.position().start()))
+            .unwrap_or(&decisive_token)
+            .position()
+            .start();
+
         let mut modifiers = modifier_tokens
             .iter()
             .flat_map(|v| match v.token_type() {
@@ -131,10 +143,13 @@ impl VariableDeclaration {
             None
         };
 
+        let position_end = tokens.peek_last().unwrap().position().end();
+
         variables.push(Variable {
             identifier,
             type_desc,
             assignment: None,
+            position: TokenPosition::new(position_start as u32, position_end as u32),
             is_mutable,
         });
 
@@ -166,6 +181,11 @@ impl Variable {
     #[inline]
     pub fn assignment(&self) -> Option<&Expression> {
         self.assignment.as_ref()
+    }
+
+    #[inline]
+    pub fn position(&self) -> TokenPosition {
+        self.position
     }
 
     #[inline]

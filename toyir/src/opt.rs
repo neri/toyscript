@@ -252,6 +252,7 @@ impl MinimalCodeOptimizer {
                     | Op::Drop2
                     | Op::Block
                     | Op::Call
+                    | Op::CallV
                     | Op::Dec
                     | Op::End
                     | Op::F32Const
@@ -443,7 +444,7 @@ impl MinimalCodeOptimizer {
                         }
                     }
 
-                    Op::Call => {
+                    Op::Call | Op::CallV => {
                         for i in 1..len {
                             if i == 2 {
                                 continue;
@@ -650,7 +651,8 @@ impl MinimalCodeOptimizer {
                 return Ok(true);
             }
 
-            Op::Drop2
+            Op::CallV
+            | Op::Drop2
             | Op::Block
             | Op::Br
             | Op::BrIf
@@ -977,6 +979,59 @@ impl MinimalCodeOptimizer {
                     _ => {}
                 }
             }
+        }
+
+        match opcode {
+            Op::Add | Op::Mul | Op::And | Op::Or | Op::Xor => {
+                if let Some(Constant::I32(rhs_const)) = rhs_const {
+                    let (len2, op2) = self.get_op(lhs_a)?;
+                    if opcode == op2 {
+                        let lhs2 = CodeIndex(self.param(lhs_a, len2, 2)?);
+                        let rhs2 = CodeIndex(self.param(lhs_a, len2, 3)?);
+
+                        let lhs_a2 = self.array_index(lhs2)?;
+                        let lhs_const2 = self.get_const(lhs_a2)?;
+
+                        if let Some(Constant::I32(lhs_const2)) = lhs_const2 {
+                            let value = match opcode {
+                                Op::Add => rhs_const.wrapping_add(lhs_const2),
+                                Op::Mul => rhs_const.wrapping_mul(lhs_const2),
+                                Op::And => rhs_const & lhs_const2,
+                                Op::Or => rhs_const | lhs_const2,
+                                Op::Xor => rhs_const ^ lhs_const2,
+                                _ => unreachable!(),
+                            };
+
+                            self.replace_nop(lhs_a2)?;
+                            self.replace_nop(lhs_a)?;
+                            self.replace_i32_const(rhs_a, rhs, value)?;
+                            self.replace(base, opcode, &[result.0, rhs2.0, rhs.0])?;
+                            return Ok(true);
+                        }
+
+                        let rhs_a2 = self.array_index(rhs2)?;
+                        let rhs_const2 = self.get_const(rhs_a2)?;
+
+                        if let Some(Constant::I32(rhs_const2)) = rhs_const2 {
+                            let value = match opcode {
+                                Op::Add => rhs_const.wrapping_add(rhs_const2),
+                                Op::Mul => rhs_const.wrapping_mul(rhs_const2),
+                                Op::And => rhs_const & rhs_const2,
+                                Op::Or => rhs_const | rhs_const2,
+                                Op::Xor => rhs_const ^ rhs_const2,
+                                _ => unreachable!(),
+                            };
+
+                            self.replace_nop(rhs_a2)?;
+                            self.replace_nop(lhs_a)?;
+                            self.replace_i32_const(rhs_a, rhs, value)?;
+                            self.replace(base, opcode, &[result.0, lhs2.0, rhs.0])?;
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
 
         Ok(false)

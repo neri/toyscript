@@ -227,6 +227,12 @@ impl CodeGen {
 
                 asm.ir_local_set(localidx)?;
             } else {
+                if !var_desc.is_mutable() {
+                    return Err(CompileError::must_assignment(
+                        var_desc.identifier().as_str(),
+                        var_decl.position(),
+                    ));
+                }
                 scope.declare_local(var_desc)?;
             }
         }

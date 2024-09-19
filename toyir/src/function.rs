@@ -490,8 +490,10 @@ impl FunctionAssembler<'_> {
         params.reverse();
         if result_len > 0 {
             self.push_vs(result);
+            self.emit(Op::Call, &params);
+        } else {
+            self.emit(Op::CallV, &params);
         }
-        self.emit(Op::Call, &params);
         Ok(())
     }
 
@@ -750,6 +752,36 @@ impl core::fmt::Debug for CodeFragment<'_> {
                     self.params[2],
                     self.params[3],
                 )
+            }
+            Op::Call => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {} ${} (",
+                    len, self.opcode as usize, self.params[0], self.opcode, self.params[1],
+                )?;
+                for (index, param) in self.params.iter().skip(2).enumerate() {
+                    if index == 0 {
+                        write!(f, "%{}", param,)?;
+                    } else {
+                        write!(f, ", %{}", param,)?;
+                    }
+                }
+                write!(f, ")")
+            }
+            Op::CallV => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ {} ${} (",
+                    len, self.opcode as usize, self.opcode, self.params[1],
+                )?;
+                for (index, param) in self.params.iter().skip(2).enumerate() {
+                    if index == 0 {
+                        write!(f, "%{}", param,)?;
+                    } else {
+                        write!(f, ", %{}", param,)?;
+                    }
+                }
+                write!(f, ")")
             }
             _ => match self.opcode.class() {
                 OpClass::UnOp => {

@@ -4,14 +4,14 @@ use crate::*;
 use ast::{float::Float, integer::Integer, statement::Statement};
 use function::FunctionDescriptor;
 use index::FuncIndex;
-// use string::{StringIndex, StringManager};
+use string::{StringIndex, StringManager};
 use token::TokenPosition;
 use toyir::{FunctionAssembler, Primitive};
 
 pub mod function;
 pub mod index;
-// pub mod string;
-// pub mod vtable;
+pub mod string;
+pub mod vtable;
 
 pub const BUILTIN_BOOLEAN: &str = "boolean";
 pub const BUILTIN_CHAR: &str = "char";
@@ -32,7 +32,8 @@ pub struct TypeSystem {
     global_objects: BTreeMap<String, GlobalObjectIndex>,
     functions: Vec<Arc<FunctionDescriptor>>,
     types: BTreeMap<String, Arc<TypeDescriptor>>,
-    // strings: StringManager,
+    strings: StringManager,
+
     integer_bits: usize,
     pointer_bits: usize,
     type_int: Primitive,
@@ -48,7 +49,8 @@ impl TypeSystem {
             global_objects: BTreeMap::new(),
             types: BTreeMap::new(),
             functions: Vec::new(),
-            // strings: StringManager::new(),
+            strings: StringManager::new(),
+
             integer_bits: 0,
             pointer_bits: 0,
             type_int: Primitive::Void,
@@ -554,20 +556,20 @@ impl TypeSystem {
         self.functions.get(funcidx.as_usize())
     }
 
-    // #[inline]
-    // pub fn register_string(&mut self, s: &str) -> StringIndex {
-    //     self.strings.register(s)
-    // }
+    #[inline]
+    pub fn register_string(&mut self, s: &str) -> StringIndex {
+        self.strings.register(s)
+    }
 
-    // #[inline]
-    // pub fn find_string(&self, s: &str) -> Option<StringIndex> {
-    //     self.strings.find(s)
-    // }
+    #[inline]
+    pub fn find_string(&self, s: &str) -> Option<StringIndex> {
+        self.strings.find(s)
+    }
 
-    // #[inline]
-    // pub fn get_string(&self, index: StringIndex) -> &str {
-    //     self.strings.get_string(index)
-    // }
+    #[inline]
+    pub fn get_string(&self, index: StringIndex) -> &str {
+        self.strings.get_string(index)
+    }
 }
 
 pub trait Resolve<T: ?Sized> {
