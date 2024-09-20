@@ -32,20 +32,14 @@ impl CodeGen {
                     if let Some(import_from) = func_decl.import_from() {
                         let mut params = Vec::new();
                         for param in func_desc.param_types() {
-                            let primitive_type = types.resolve_primitive(param).ok_or(
-                                CompileError::invalid_type(&Identifier::new(param.identifier())),
-                            )?;
+                            let primitive_type = types.storage_type(param);
                             params.push(primitive_type);
                         }
 
                         let mut results = Vec::new();
                         let result_type = func_desc.result_type();
                         if !result_type.is_special_type() {
-                            let primitive_type = types.resolve_primitive(result_type).ok_or(
-                                CompileError::invalid_type(&Identifier::new(
-                                    result_type.identifier(),
-                                )),
-                            )?;
+                            let primitive_type = types.storage_type(result_type);
                             results.push(primitive_type);
                         }
 
@@ -120,13 +114,7 @@ impl CodeGen {
                 .inferred_type()
                 .strict_type()
                 .ok_or(CompileError::could_not_infer(var.identifier()))?;
-            let primitive_type = scope
-                .types()
-                .resolve_primitive(infered_type)
-                .ok_or(CompileError::invalid_type(&Identifier::new(
-                    infered_type.identifier(),
-                )))
-                .unwrap();
+            let primitive_type = scope.types().storage_type(infered_type);
             var.set_index(builder.declare_param(
                 &var.identifier().as_string(),
                 infered_type.identifier(),
@@ -173,9 +161,7 @@ impl CodeGen {
                 var_desc.index(),
                 &var_desc.identifier().as_string(),
                 type_desc.identifier(),
-                types
-                    .resolve_primitive(type_desc)
-                    .unwrap_or(Primitive::Void),
+                types.storage_type(type_desc),
                 var_desc.is_mutable(),
             )?;
         }

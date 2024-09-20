@@ -11,7 +11,7 @@ use toyir::{FunctionAssembler, Primitive};
 pub mod function;
 pub mod index;
 pub mod string;
-pub mod vtable;
+// pub mod vtable;
 
 pub const BUILTIN_BOOLEAN: &str = "boolean";
 pub const BUILTIN_CHAR: &str = "char";
@@ -32,7 +32,7 @@ pub struct TypeSystem {
     global_objects: BTreeMap<String, GlobalObjectIndex>,
     functions: Vec<Arc<FunctionDescriptor>>,
     types: BTreeMap<String, Arc<TypeDescriptor>>,
-    strings: StringManager,
+    string_table: StringManager,
 
     integer_bits: usize,
     pointer_bits: usize,
@@ -49,7 +49,7 @@ impl TypeSystem {
             global_objects: BTreeMap::new(),
             types: BTreeMap::new(),
             functions: Vec::new(),
-            strings: StringManager::new(),
+            string_table: StringManager::new(),
 
             integer_bits: 0,
             pointer_bits: 0,
@@ -306,6 +306,19 @@ impl TypeSystem {
     }
 
     #[inline]
+    pub fn storage_type(&self, type_desc: &Arc<TypeDescriptor>) -> Primitive {
+        let mut target = type_desc;
+        loop {
+            match target.kind() {
+                TypeKind::Primitive(primitive) => return *primitive,
+                TypeKind::Alias(arc) => target = arc,
+                TypeKind::Reference(_) => return self.type_usize,
+                TypeKind::Optional(_) => return self.type_usize,
+            }
+        }
+    }
+
+    #[inline]
     fn make_primitive_alias(&mut self, identifier: &str, primitive: Primitive) -> Result<(), ()> {
         if self.get(identifier).is_some() {
             return Err(());
@@ -558,17 +571,17 @@ impl TypeSystem {
 
     #[inline]
     pub fn register_string(&mut self, s: &str) -> StringIndex {
-        self.strings.register(s)
+        self.string_table.register(s)
     }
 
     #[inline]
     pub fn find_string(&self, s: &str) -> Option<StringIndex> {
-        self.strings.find(s)
+        self.string_table.find(s)
     }
 
     #[inline]
     pub fn get_string(&self, index: StringIndex) -> &str {
-        self.strings.get_string(index)
+        self.string_table.get_string(index)
     }
 }
 
@@ -605,8 +618,8 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
         match desc.kind() {
             TypeKind::Primitive(_) => Some(desc.clone()),
             TypeKind::Alias(alias) => self.resolve(alias),
-            TypeKind::Reference(_) => Some(desc.clone()),
-            TypeKind::Optional(_) => Some(desc.clone()),
+            TypeKind::Reference(_) => None,
+            TypeKind::Optional(_) => None,
         }
     }
 
@@ -614,8 +627,8 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
         match desc.kind() {
             TypeKind::Primitive(primitive) => Some(*primitive),
             TypeKind::Alias(alias) => self.resolve_primitive(alias),
-            TypeKind::Reference(_) => Some(self.type_usize),
-            TypeKind::Optional(_) => Some(self.type_usize),
+            TypeKind::Reference(_) => None,
+            TypeKind::Optional(_) => None,
         }
     }
 }
