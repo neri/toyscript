@@ -181,9 +181,24 @@ impl Primitive {
         }
     }
 
-    /// generic type id
-    /// 
-    /// sum of:
+    pub fn storage_type(&self) -> Self {
+        match self {
+            Self::F32 => Self::F32,
+            Self::F64 => Self::F64,
+            Self::I16 => Self::I32,
+            Self::I32 => Self::I32,
+            Self::I64 => Self::I64,
+            Self::I8 => Self::I32,
+            Self::U16 => Self::I32,
+            Self::U32 => Self::I32,
+            Self::U64 => Self::I64,
+            Self::U8 => Self::I32,
+            Self::Void => Self::Void,
+        }
+    }
+
+    /// type id
+    ///   sum of:
     ///     (is_unsigned: 1)
     ///     (is_float: 2)
     ///     (size_of_type << 2)

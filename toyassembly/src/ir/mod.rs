@@ -112,11 +112,23 @@ impl Module {
     }
 
     pub fn assemble(&mut self) -> Result<(), AssembleError> {
-        let mut codes = self.codes.drain();
-        for code in codes.iter_mut() {
-            code.assemble(&self)?;
+        if self.funcs.0.len() > 0 {
+            let mut codes = self.codes.drain();
+            for code in codes.iter_mut() {
+                code.assemble(&self)?;
+            }
+            self.codes.0.extend(codes);
+        } else {
+            self.types.0.clear();
+            self.imports.0.clear();
+            self.tables.0.clear();
+            self.elems.0.clear();
+            self.start = None;
+
+            if self.data_segs.0.len() == 0 {
+                self.memories.0.clear();
+            }
         }
-        self.codes.0.extend(codes);
 
         Ok(())
     }

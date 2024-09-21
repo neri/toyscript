@@ -1,12 +1,12 @@
 use crate::*;
 
 #[derive(Debug)]
-pub struct StringManager {
+pub struct StringTable {
     data: Vec<u8>,
     descriptors: Vec<StringDescriptor>,
 }
 
-impl StringManager {
+impl StringTable {
     #[inline]
     pub fn new() -> Self {
         Self {

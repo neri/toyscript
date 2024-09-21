@@ -154,7 +154,7 @@ impl FromToyIR {
                 TIR::F32Const => {
                     let ssa_index = Self::get_params(tir.params(), 0)?;
                     let const_val = Self::get_params(tir.params(), 1)?;
-                    value_stack.push(ssa_index, ValType::F64);
+                    value_stack.push(ssa_index, ValType::F32);
 
                     writer.write(WasmOpcode::F32Const).unwrap();
                     writer.write(f32::from_bits(const_val)).unwrap();
@@ -231,28 +231,6 @@ impl FromToyIR {
                     writer.write(mnemonic).unwrap();
                 }
 
-                TIR::DropRight => {
-                    let result = Self::get_params(tir.params(), 0)?;
-                    let lhs_i = Self::get_params(tir.params(), 1)?;
-                    let rhs_i = Self::get_params(tir.params(), 2)?;
-
-                    let _rhs_t = value_stack.expect(rhs_i)?;
-                    let lhs_t = value_stack.expect(lhs_i)?;
-                    value_stack.push(result, lhs_t);
-
-                    writer.write(WasmOpcode::Drop).unwrap();
-                }
-
-                TIR::Drop2 => {
-                    let lhs_i = Self::get_params(tir.params(), 1)?;
-                    let rhs_i = Self::get_params(tir.params(), 2)?;
-                    let _rhs_t = value_stack.expect(rhs_i)?;
-                    let _lhs_t = value_stack.expect(lhs_i)?;
-
-                    writer.write(WasmOpcode::Drop).unwrap();
-                    writer.write(WasmOpcode::Drop).unwrap();
-                }
-
                 // cmp
                 TIR::Eq
                 | TIR::Ne
@@ -298,15 +276,13 @@ impl FromToyIR {
                 }
 
                 // special unop
-                TIR::UnaryNop | TIR::Not | TIR::Inc | TIR::Dec => {
+                TIR::Not | TIR::Inc | TIR::Dec => {
                     let result = Self::get_params(tir.params(), 0)?;
                     let operand = Self::get_params(tir.params(), 1)?;
                     let val_type = value_stack.expect(operand)?;
                     value_stack.push(result, val_type);
 
                     match (opcode, val_type) {
-                        (TIR::UnaryNop, _) => {}
-
                         (TIR::Inc, ValType::I32) => {
                             writer.write(WasmOpcode::I32Const).unwrap();
                             writer.write(1).unwrap();
@@ -663,10 +639,18 @@ impl FromToyIR {
                     }
                 }
 
+                // supecial opcode for optimization
+                TIR::UnaryNop | TIR::DropRight | TIR::Drop2 => {
+                    return Err(AssembleError::internal_inconsistency(
+                        &format!("Unsupported opcode {}", opcode),
+                        ErrorPosition::Unspecified,
+                    ));
+                }
+
                 #[allow(unreachable_patterns)]
                 _ => {
                     return Err(AssembleError::internal_inconsistency(
-                        &format!("Unknown opcoe {}", opcode),
+                        &format!("Unknown opcode {}", opcode),
                         ErrorPosition::Unspecified,
                     ))
                 }

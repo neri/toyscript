@@ -23,7 +23,7 @@ impl MinimalCodeOptimizer {
         codes: Vec<u32>,
         params: &[LocalVarDescriptor],
         locals: &[LocalVarDescriptor],
-    ) -> Result<Vec<u32>, OptimizeError> {
+    ) -> Result<(Vec<u32>, Vec<LocalVarDescriptor>), OptimizeError> {
         let mut positions = Vec::with_capacity(codes.len() / 4);
         let mut index = 0;
         while let Some(len_opc) = codes.get(index) {
@@ -44,7 +44,7 @@ impl MinimalCodeOptimizer {
         };
         optimizer._optimize()?;
 
-        Ok(optimizer.codes)
+        Ok((optimizer.codes, optimizer.locals))
     }
 
     fn _optimize(&mut self) -> Result<(), OptimizeError> {
@@ -406,154 +406,344 @@ impl MinimalCodeOptimizer {
             }
         }
 
-        {
-            // compaction & renumber
-            let mut ren_tbl = BTreeMap::new();
-            let mut new_positions = Vec::new();
-            let mut new_ci = 0;
-            let mut oi = 0;
-            for (i, ai) in self.positions.iter().enumerate() {
-                let ci = CodeIndex(i as u32);
-                let ai = *ai;
-                let (len, opc) = self.get_op(ai)?;
-                if opc == Op::Nop {
-                    continue;
-                }
-                ren_tbl.insert(ci, CodeIndex(new_ci));
-                new_positions.push(ArrayIndex(oi as u32));
-                for i in 0..len {
-                    self.codes[oi + i] = self.codes[ai.as_usize() + i];
-                }
-                oi += len;
-                new_ci += 1;
+        if true {
+            // rename local vars
+
+            for item in self.params.iter_mut() {
+                item.read_count = 0;
+                item.write_count = 0;
             }
-            self.codes.resize(oi, 0xCCCC_CCCC);
-            self.codes.shrink_to_fit();
-            self.positions = new_positions;
+            for item in self.locals.iter_mut() {
+                item.read_count = 0;
+                item.write_count = 0;
+            }
 
             let mut ci = 0;
             while let Ok(base) = self.array_index(CodeIndex(ci)) {
                 ci += 1;
                 let (len, opcode) = self.get_op(base)?;
-                match opcode {
-                    Op::Nop | Op::Unreachable => {}
 
-                    Op::Return => {
-                        for i in 1..len {
-                            self.rename(&ren_tbl, base, len, i)?;
-                        }
+                match opcode {
+                    Op::LocalGet => {
+                        let local_index = self.param(base, len, 2)?;
+                        let var_desc = self.get_local_mut(local_index as usize).unwrap();
+                        var_desc.read_count += 1;
                     }
 
-                    Op::Call | Op::CallV => {
-                        for i in 1..len {
-                            if i == 2 {
-                                continue;
-                            }
-                            self.rename(&ren_tbl, base, len, i)?;
-                        }
+                    Op::LocalSet => {
+                        let local_index = self.param(base, len, 2)?;
+                        let var_desc = self.get_local_mut(local_index as usize).unwrap();
+                        var_desc.write_count += 1;
                     }
 
                     Op::LocalTee => {
-                        self.rename(&ren_tbl, base, len, 1)?;
-                        self.rename(&ren_tbl, base, len, 3)?;
+                        let local_index = self.param(base, len, 2)?;
+                        let var_desc = self.get_local_mut(local_index as usize).unwrap();
+                        var_desc.read_count += 1;
+                        var_desc.write_count += 1;
                     }
 
-                    // %n = op [n, ...]
-                    Op::Block
-                    | Op::Br
-                    | Op::Drop
-                    | Op::End
-                    | Op::F32Const
-                    | Op::F64Const
-                    | Op::I32Const
-                    | Op::I64Const
-                    | Op::LocalGet
-                    | Op::LocalSet
-                    | Op::Loop => {
-                        self.rename(&ren_tbl, base, len, 1)?;
-                    }
-
-                    // unary
-                    // %n = op %n
-                    Op::UnaryNop
-                    | Op::Cast
-                    | Op::BrIf
-                    | Op::Dec
-                    | Op::Eqz
-                    | Op::Inc
-                    | Op::Not
-                    | Op::Neg => {
-                        for i in 1..=2 {
-                            self.rename(&ren_tbl, base, len, i)?;
-                        }
-                    }
-
-                    // binary
-                    // %n = op %n, %n
-                    Op::DropRight
-                    | Op::Add
-                    | Op::And
-                    | Op::DivS
-                    | Op::DivU
-                    | Op::Eq
-                    | Op::GeS
-                    | Op::GeU
-                    | Op::GtS
-                    | Op::GtU
-                    | Op::LeS
-                    | Op::LeU
-                    | Op::LtS
-                    | Op::LtU
-                    | Op::Mul
-                    | Op::Ne
-                    | Op::Or
-                    | Op::RemS
-                    | Op::RemU
-                    | Op::Shl
-                    | Op::ShrS
-                    | Op::ShrU
-                    | Op::Sub
-                    | Op::Xor => {
-                        for i in 1..=3 {
-                            self.rename(&ren_tbl, base, len, i)?;
-                        }
-                    }
-
-                    Op::Drop2 => {
-                        for i in 2..=3 {
-                            self.rename(&ren_tbl, base, len, i)?;
-                        }
-                    }
+                    _ => {}
                 }
             }
+
+            let mut var_rename_table = BTreeMap::new();
+            let mut new_locals = Vec::with_capacity(self.locals.len());
+            for (index, _) in self.params.iter().enumerate() {
+                var_rename_table.insert(index as u32, index as u32);
+            }
+            let index_base = self.params.len();
+
+            let mut old_locals = Vec::new();
+            core::mem::swap(&mut self.locals, &mut old_locals);
+
+            // Sort by type, since wasm can generate code more efficiently by grouping variables of the same type together.
+            old_locals.sort_by(|a, b| {
+                let a = a.primitive_type().storage_type();
+                let b = b.primitive_type().storage_type();
+                match a.is_float().cmp(&b.is_float()) {
+                    core::cmp::Ordering::Equal => a.bits_of().cmp(&b.bits_of()),
+                    ord => ord,
+                }
+            });
+
+            for mut item in old_locals.into_iter() {
+                if item.read_count > 0 || item.write_count > 0 {
+                    let old_index = item.index().as_u32();
+                    let new_index = (index_base + new_locals.len()) as u32;
+                    item.set_index(unsafe { LocalIndex::new(new_index) });
+                    var_rename_table.insert(old_index, new_index);
+                    new_locals.push(item);
+                }
+            }
+            new_locals.shrink_to_fit();
+            self.locals = new_locals;
+
+            // compaction & renumber
+
+            fn copy<F>(
+                array: &[u32],
+                base: ArrayIndex,
+                dest: &mut Vec<u32>,
+                kernel: F,
+            ) -> Result<(), OptimizeError>
+            where
+                F: FnOnce(&mut [u32]) -> Result<(), OptimizeError>,
+            {
+                let si = base.as_usize();
+                let len_opc = *array.get(si).ok_or(OptimizeError::OutOfCodes(si))?;
+                let len = (len_opc >> 16) as usize;
+                //let opcode = unsafe { transmute::<_, Op>((len_opc & 0xFFFF) as u8) };
+
+                dest.push(len_opc);
+                let di = dest.len();
+                for i in 1..len {
+                    dest.push(*array.get(si + i).unwrap());
+                }
+                let data = dest.get_mut(di..di + len - 1).unwrap();
+                kernel(data)?;
+
+                Ok(())
+            }
+
+            fn emit(array: &mut Vec<u32>, opcode: Op, params: &[u32]) {
+                let len = params.len() + 1;
+                let len_opc = ((len as u32) << 16) | (opcode as u32);
+                array.push(len_opc);
+                array.extend_from_slice(params);
+            }
+
+            let mut new_code = Vec::with_capacity(self.codes.len());
+            let mut new_positions = Vec::with_capacity(self.positions.len());
+            let mut block_stack = RenamingStack::new();
+            let mut value_stack = RenamingStack::new();
+            let mut ci = 0;
+            let mut new_ci = 0;
+            {
+                let new_code = &mut new_code;
+                while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                    ci += 1;
+                    let (len, opcode) = self.get_op(base)?;
+                    let mut dai = new_code.len();
+                    match opcode {
+                        Op::Nop => continue,
+
+                        Op::Unreachable => {
+                            copy(&self.codes, base, new_code, |_| Ok(()))?;
+                        }
+
+                        Op::Return => {
+                            copy(&self.codes, base, new_code, |a| {
+                                for item in a.iter_mut() {
+                                    let new_value = value_stack.expect(base, *item)?;
+                                    *item = new_value;
+                                }
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::Call | Op::CallV => {
+                            copy(&self.codes, base, new_code, |a| {
+                                for item in a.iter_mut().skip(2).rev() {
+                                    let old_value = *item;
+                                    let new_value = value_stack.expect(base, old_value)?;
+                                    *item = new_value;
+                                }
+                                if opcode == Op::Call {
+                                    value_stack.push(a[0], new_ci);
+                                }
+                                a[0] = new_ci;
+
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::Drop => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let operand = value_stack.expect(base, a[0])?;
+                                a[0] = operand;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::Block | Op::Loop => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let result = new_ci;
+                                block_stack.push(a[0], result);
+                                a[0] = result;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::End => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let operand = block_stack.expect(base, a[0])?;
+                                a[0] = operand;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::Br => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let target = block_stack.lookup(base, a[0])?;
+                                a[0] = target;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::BrIf => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let target = block_stack.lookup(base, a[0])?;
+                                let operand = value_stack.expect(base, a[1])?;
+                                a[0] = target;
+                                a[1] = operand;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::F32Const | Op::F64Const | Op::I32Const | Op::I64Const => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let result = new_ci;
+                                value_stack.push(a[0], result);
+                                a[0] = result;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::LocalGet => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let result = new_ci;
+                                value_stack.push(a[0], result);
+                                a[0] = result;
+                                a[1] = *var_rename_table.get(&a[1]).unwrap();
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::LocalSet => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let operand = value_stack.expect(base, a[0])?;
+                                a[0] = operand;
+                                a[1] = *var_rename_table.get(&a[1]).unwrap();
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::LocalTee => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let operand = value_stack.expect(base, a[2])?;
+                                let result = new_ci;
+                                value_stack.push(a[0], result);
+                                a[0] = result;
+                                a[1] = *var_rename_table.get(&a[1]).unwrap();
+                                a[2] = operand;
+                                Ok(())
+                            })?;
+                        }
+
+                        // unary
+                        // %n = op %n
+                        Op::Cast | Op::Dec | Op::Eqz | Op::Inc | Op::Not | Op::Neg => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let operand = value_stack.expect(base, a[1])?;
+                                let result = new_ci;
+                                value_stack.push(a[0], result);
+                                a[0] = result;
+                                a[1] = operand;
+                                Ok(())
+                            })?;
+                        }
+
+                        // binary
+                        // %n = op %n, %n
+                        Op::Add
+                        | Op::And
+                        | Op::DivS
+                        | Op::DivU
+                        | Op::Eq
+                        | Op::GeS
+                        | Op::GeU
+                        | Op::GtS
+                        | Op::GtU
+                        | Op::LeS
+                        | Op::LeU
+                        | Op::LtS
+                        | Op::LtU
+                        | Op::Mul
+                        | Op::Ne
+                        | Op::Or
+                        | Op::RemS
+                        | Op::RemU
+                        | Op::Shl
+                        | Op::ShrS
+                        | Op::ShrU
+                        | Op::Sub
+                        | Op::Xor => {
+                            copy(&self.codes, base, new_code, |a| {
+                                let rhs = value_stack.expect(base, a[2])?;
+                                let lhs = value_stack.expect(base, a[1])?;
+                                let result = new_ci;
+                                value_stack.push(a[0], result);
+                                a[0] = result;
+                                a[1] = lhs;
+                                a[2] = rhs;
+                                Ok(())
+                            })?;
+                        }
+
+                        Op::UnaryNop => {
+                            let result = self.param(base, len, 1)?;
+                            let operand = self.param(base, len, 2)?;
+                            value_stack.expect(base, operand)?;
+                            value_stack.push(result, new_ci);
+                        }
+
+                        Op::DropRight => {
+                            let old_result = self.param(base, len, 1)?;
+                            let lhs = self.param(base, len, 2)?;
+                            let rhs = self.param(base, len, 3)?;
+
+                            let rhs = value_stack.expect(base, rhs)?;
+                            let lhs = value_stack.expect(base, lhs)?;
+                            value_stack.push(old_result, lhs);
+
+                            emit(new_code, Op::Drop, &[rhs]);
+                        }
+
+                        Op::Drop2 => {
+                            let lhs = self.param(base, len, 2)?;
+                            let rhs = self.param(base, len, 3)?;
+
+                            let rhs = value_stack.expect(base, rhs)?;
+                            let lhs = value_stack.expect(base, lhs)?;
+
+                            emit(new_code, Op::Drop, &[rhs]);
+
+                            new_positions.push(ArrayIndex(dai as u32));
+                            new_ci += 1;
+                            dai = new_code.len();
+
+                            emit(new_code, Op::Drop, &[lhs]);
+                        }
+                    }
+
+                    new_positions.push(ArrayIndex(dai as u32));
+                    new_ci += 1;
+                }
+            }
+
+            if block_stack.len() > 0 {
+                return Err(OptimizeError::InvalidBlockStack(block_stack.len()));
+            }
+            if value_stack.len() > 0 {
+                return Err(OptimizeError::InvalidValueStack(value_stack.len()));
+            }
+            new_code.shrink_to_fit();
+            new_positions.shrink_to_fit();
+
+            self.codes = new_code;
+            self.positions = new_positions;
         }
-
-        Ok(())
-    }
-
-    fn rename(
-        &mut self,
-        ren_tbl: &BTreeMap<CodeIndex, CodeIndex>,
-        base: ArrayIndex,
-        len: usize,
-        index: usize,
-    ) -> Result<(), OptimizeError> {
-        if index >= len {
-            return Err(OptimizeError::InvalidParameter(base.as_usize(), index));
-        }
-        let addr = base.as_usize() + index;
-        let p = self
-            .codes
-            .get_mut(addr)
-            .ok_or(OptimizeError::OutOfCodes(addr))?;
-
-        let old = CodeIndex(*p);
-        let new = ren_tbl.get(&old).ok_or(OptimizeError::RenameError(
-            base.as_usize(),
-            index,
-            old.as_usize(),
-        ))?;
-        *p = new.0;
 
         Ok(())
     }
@@ -1334,5 +1524,53 @@ impl ArrayIndex {
     #[inline]
     pub fn as_usize(&self) -> usize {
         self.0 as usize
+    }
+}
+
+struct RenamingStack(Vec<(u32, u32)>);
+
+impl RenamingStack {
+    #[inline]
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn push(&mut self, old_value: u32, new_value: u32) {
+        self.0.push((old_value, new_value))
+    }
+
+    pub fn expect(&mut self, base: ArrayIndex, expected_value: u32) -> Result<u32, OptimizeError> {
+        let (old_value, new_value) = self
+            .0
+            .pop()
+            .ok_or(OptimizeError::OutOfStack(base.as_usize(), self.0.len()))?;
+
+        if old_value != expected_value {
+            return Err(OptimizeError::RenameError(
+                base.as_usize(),
+                old_value as usize,
+                expected_value as usize,
+            ));
+        }
+
+        Ok(new_value)
+    }
+
+    pub fn lookup(&self, base: ArrayIndex, expected_value: u32) -> Result<u32, OptimizeError> {
+        for item in &self.0 {
+            if item.0 == expected_value {
+                return Ok(item.1);
+            }
+        }
+
+        Err(OptimizeError::InvalidBranch(
+            base.as_usize(),
+            expected_value,
+        ))
     }
 }

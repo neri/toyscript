@@ -4,7 +4,7 @@ use crate::*;
 use ast::{float::Float, integer::Integer, statement::Statement};
 use function::FunctionDescriptor;
 use index::FuncIndex;
-use string::{StringIndex, StringManager};
+use string::{StringIndex, StringTable};
 use token::TokenPosition;
 use toyir::{FunctionAssembler, Primitive};
 
@@ -32,7 +32,7 @@ pub struct TypeSystem {
     global_objects: BTreeMap<String, GlobalObjectIndex>,
     functions: Vec<Arc<FunctionDescriptor>>,
     types: BTreeMap<String, Arc<TypeDescriptor>>,
-    string_table: StringManager,
+    string_table: StringTable,
 
     integer_bits: usize,
     pointer_bits: usize,
@@ -49,7 +49,7 @@ impl TypeSystem {
             global_objects: BTreeMap::new(),
             types: BTreeMap::new(),
             functions: Vec::new(),
-            string_table: StringManager::new(),
+            string_table: StringTable::new(),
 
             integer_bits: 0,
             pointer_bits: 0,

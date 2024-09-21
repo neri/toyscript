@@ -55,6 +55,8 @@ pub enum OptimizeError {
 
     OutOfBlock(usize, u32),
 
+    OutOfStack(usize, usize),
+
     InvalidBranch(usize, u32),
 
     InvalidParameter(usize, usize),
@@ -66,6 +68,10 @@ pub enum OptimizeError {
     RenameError(usize, usize, usize),
 
     TypeCastError(usize, u32),
+
+    InvalidValueStack(usize),
+
+    InvalidBlockStack(usize),
 }
 
 impl Error for OptimizeError {
@@ -125,6 +131,15 @@ impl fmt::Display for OptimizeError {
                 .finish(),
             Self::OutOfBlock(arg0, arg1) => {
                 f.debug_tuple("OutOfBlock").field(arg0).field(arg1).finish()
+            }
+            Self::OutOfStack(arg0, arg1) => {
+                f.debug_tuple("OutOfStack").field(arg0).field(arg1).finish()
+            }
+            Self::InvalidBlockStack(arg0) => {
+                f.debug_tuple("InvalidBlockStack").field(arg0).finish()
+            }
+            Self::InvalidValueStack(arg0) => {
+                f.debug_tuple("InvalidValueStack").field(arg0).finish()
             }
         }
     }

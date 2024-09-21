@@ -361,9 +361,42 @@ impl {class_name} {{
         }}
     }}
 
-    /// generic type id
-    /// 
-    /// sum of:
+    pub fn storage_type(&self) -> Self {{
+        match self {{
+"
+    )
+    .unwrap();
+
+    for type_desc in primitives.values() {
+        let dest_type = match type_desc.kind {
+            TypeKind::Integer | TypeKind::Unsigned => {
+                format!(
+                    "I{}",
+                    if type_desc.bits < 32 {
+                        32
+                    } else {
+                        type_desc.bits
+                    }
+                )
+            }
+            TypeKind::Float | TypeKind::Void => type_desc.identifier.clone(),
+        };
+
+        writeln!(
+            os,
+            "            Self::{} => Self::{},",
+            type_desc.identifier, dest_type,
+        )
+        .unwrap();
+    }
+
+    write!(
+        os,
+        "        }}
+    }}
+
+    /// type id
+    ///   sum of:
     ///     (is_unsigned: 1)
     ///     (is_float: 2)
     ///     (size_of_type << 2)

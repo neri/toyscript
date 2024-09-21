@@ -33,6 +33,8 @@ impl Function {
                     primitive_type,
                     is_mut: true,
                     assignment: None,
+                    read_count: 0,
+                    write_count: 0,
                 });
             }
         }
@@ -94,7 +96,7 @@ impl core::fmt::Debug for Function {
         d = d.field("params", &LocalIter(&self.params));
         d = d.field("results", &LocalIter(&self.results));
         d = d.field("locals", &LocalIter(&self.locals));
-        d = d.field("codes", &CoreDumper(&self.codes));
+        d = d.field("codes", &CodeDumper(&self.codes));
         d.finish()
     }
 }
@@ -133,6 +135,8 @@ impl FunctionBuilder {
             primitive_type,
             is_mut: false,
             assignment: None,
+            read_count: 0,
+            write_count: 0,
         };
         self.params.push(item);
         Ok(local_idx)
@@ -157,6 +161,8 @@ impl FunctionBuilder {
             primitive_type,
             is_mut,
             assignment: None,
+            read_count: 0,
+            write_count: 0,
         };
         self.locals.push(item);
         Ok(())
@@ -188,7 +194,7 @@ impl FunctionBuilder {
             locals,
         } = self;
 
-        let codes = MinimalCodeOptimizer::optimize(buf, &params, &locals)?;
+        let (codes, locals) = MinimalCodeOptimizer::optimize(buf, &params, &locals)?;
 
         Ok(Function {
             signature,
@@ -201,9 +207,9 @@ impl FunctionBuilder {
     }
 }
 
-struct CoreDumper<'a>(&'a [u32]);
+struct CodeDumper<'a>(&'a [u32]);
 
-impl core::fmt::Debug for CoreDumper<'_> {
+impl core::fmt::Debug for CodeDumper<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_list().entries(CodeStreamIter::new(self.0)).finish()
     }
@@ -225,15 +231,20 @@ impl<'a> Iterator for CodeStreamIter<'a> {
     type Item = CodeFragment<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let len_opc = self.buf.get(self.index)?;
-        let len = (len_opc >> 16) as usize;
-        if len > 0 {
-            let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
-            let params = self.buf.get(self.index + 1..self.index + len)?;
-            self.index += len;
-            Some(CodeFragment { opcode, params })
-        } else {
-            None
+        loop {
+            let len_opc = self.buf.get(self.index)?;
+            let len = (len_opc >> 16) as usize;
+            if len > 0 {
+                let opcode = unsafe { transmute::<u8, Op>((len_opc & 0xFFFF) as u8) };
+                let params = self.buf.get(self.index + 1..self.index + len)?;
+                self.index += len;
+                if opcode == Op::Nop {
+                    continue;
+                }
+                return Some(CodeFragment { opcode, params });
+            } else {
+                return None;
+            }
         }
     }
 }
@@ -851,6 +862,11 @@ pub struct LocalIndex(u32);
 
 impl LocalIndex {
     #[inline]
+    pub const unsafe fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[inline]
     pub const fn as_u32(&self) -> u32 {
         self.0
     }
@@ -870,19 +886,23 @@ impl core::fmt::Debug for LocalIter<'_> {
             if let Some(identifier) = item.identifier.as_ref() {
                 writeln!(
                     f,
-                    "    ${}: {} /* {:?}: {:?} */",
+                    "    ${}: {} /* {:?}: {:?} => {} r({}) w({}) */",
                     item.index.as_u32(),
-                    item.primitive_type,
+                    item.primitive_type.storage_type(),
                     identifier,
                     item.high_context_type,
+                    item.primitive_type,
+                    item.read_count,
+                    item.write_count,
                 )?;
             } else {
                 writeln!(
                     f,
-                    "    ${}: {} /* {} */",
+                    "    ${}: {} /* {} => {} */",
                     item.index.as_u32(),
-                    item.primitive_type,
+                    item.primitive_type.storage_type(),
                     item.high_context_type,
+                    item.primitive_type,
                 )?;
             }
         }
@@ -898,8 +918,8 @@ pub struct LocalVarDescriptor {
     primitive_type: Primitive,
     is_mut: bool,
     pub(super) assignment: Option<Constant>,
-    // pub(super)  was_read: bool,
-    // pub(super)  was_written: bool,
+    pub(super) read_count: usize,
+    pub(super) write_count: usize,
 }
 
 impl LocalVarDescriptor {
@@ -911,6 +931,16 @@ impl LocalVarDescriptor {
     #[inline]
     pub fn primitive_type(&self) -> Primitive {
         self.primitive_type
+    }
+
+    #[inline]
+    pub fn index(&self) -> LocalIndex {
+        self.index
+    }
+
+    #[inline]
+    pub fn set_index(&mut self, index: LocalIndex) {
+        self.index = index;
     }
 
     #[inline]
@@ -933,6 +963,8 @@ impl Clone for LocalVarDescriptor {
             primitive_type: self.primitive_type.clone(),
             is_mut: self.is_mut.clone(),
             assignment: self.assignment.clone(),
+            read_count: self.read_count,
+            write_count: self.write_count,
         }
     }
 }
