@@ -77,6 +77,15 @@ impl Module {
                 vec.push(target);
             }
         }
+        for item in &self.imports {
+            match item.import_desc() {
+                ImportDescriptor::Function(func) => {
+                    if item.is_external() {
+                        add_retain(&mut retain_list, func.function_index());
+                    }
+                }
+            }
+        }
         for item in self.functions.values() {
             if item.exports().is_some() {
                 add_retain(&mut retain_list, item.function_index());

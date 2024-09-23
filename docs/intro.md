@@ -28,11 +28,11 @@ export function add(a: int, b: int): int {
 - Interrupts execution of the innermost loop and executes the next lap of the loop.
 - Cannot be used outside of a loop.
 
-### declare-function statement (temp)
+### declare-function statement
 
 ```
-'declare' 'function' identifier '('
-[identifier ':' type (',' identifier ':' type)* [','] ]
+['export'] 'declare' 'function' identifier1 '('
+[identifier2 ':' type2 (',' identifier2n ':' type2n)* [','] ]
 ')' [':' type]
 ```
 
@@ -48,11 +48,11 @@ export function add(a: int, b: int): int {
 
 ```
 ['export'] 'function' identifier1 '('
-[identifier2 ':' type1 (',' identifier2n ':' type1n)* [','] ]
-')' [':' type2] '{' expr '}'
+[identifier2 ':' type2 (',' identifier2n ':' type2n)* [','] ]
+')' [':' type3] '{' expr '}'
 ```
 
-- Defines the function `identifier1`, with arguments of `identifier2n` and `type1n`, return type of `type2`, and contents of `expr`.
+- Defines the function `identifier1`, with arguments of `identifier2n` and `type2n`, return type of `type3`, and contents of `expr`.
 
 ### for statement
 

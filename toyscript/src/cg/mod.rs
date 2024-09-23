@@ -50,6 +50,7 @@ impl CodeGen {
                             import_from.0,
                             &params,
                             &results,
+                            func_desc.modifiers().contains(ModifierFlag::EXPORT),
                         ));
                     } else {
                         let function = Self::generate_function(func_decl, func_desc, types)?;

@@ -37,11 +37,8 @@ impl FunctionDeclaration {
             .min_by(|a, b| a.position().start().cmp(&b.position().start()))
             .unwrap_or(&decisive_token);
 
-        let mut modifiers = ModifierFlag::from_tokens(
-            modifier_tokens,
-            &[ModifierFlag::EXPORT, ModifierFlag::IMPORT],
-        )
-        .map_err(|token| CompileError::unexpected_token(&token))?;
+        let modifiers = ModifierFlag::from_tokens(modifier_tokens, &[ModifierFlag::EXPORT])
+            .map_err(|token| CompileError::unexpected_token(&token))?;
 
         let identifier = Identifier::from_tokens(tokens)?;
 
@@ -83,7 +80,6 @@ impl FunctionDeclaration {
             }
             FunctionSyntaxFlavor::Declare => {
                 block = Block::empty();
-                modifiers.remove(ModifierFlag::EXPORT);
                 import_from = Some(("env".to_owned(), identifier.as_string()));
             }
             FunctionSyntaxFlavor::Class => {

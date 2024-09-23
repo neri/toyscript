@@ -163,7 +163,7 @@ impl Statement {
                                     &[],
                                     token,
                                     tokens,
-                                    Some(&[TokenType::Symbol(';')]),
+                                    Some(&[TokenType::Symbol(','), TokenType::Symbol(';')]),
                                 )?)
                             } else {
                                 ForInit::Expr(Expression::parse(tokens, ending_mode!(';'))?)
