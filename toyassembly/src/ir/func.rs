@@ -93,9 +93,9 @@ impl Functions {
         Ok(())
     }
 
-    pub(super) fn process_tir(
+    pub(super) fn process_tir<'a>(
         module: &mut Module,
-        functions: &[toyir::Function],
+        functions: impl Iterator<Item = &'a toyir::Function>,
     ) -> Result<(), AssembleError> {
         let n_imports = module.imports.num_import_funcs();
         for tir_func in functions {

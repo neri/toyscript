@@ -9,8 +9,10 @@ use error::AssembleError;
 use opt::MinimalCodeOptimizer;
 
 pub struct Function {
+    func_idx: FuncTempIndex,
     signature: String,
     exports: Option<String>,
+    dependencies: Vec<FuncTempIndex>,
     params: Vec<LocalVarDescriptor>,
     results: Vec<LocalVarDescriptor>,
     locals: Vec<LocalVarDescriptor>,
@@ -19,6 +21,7 @@ pub struct Function {
 
 impl Function {
     pub fn new(
+        func_idx: FuncTempIndex,
         signature: &str,
         exports: Option<&str>,
         results: Option<(&str, Primitive)>,
@@ -40,6 +43,7 @@ impl Function {
         }
 
         Ok(FunctionBuilder {
+            func_idx,
             signature: signature.to_owned(),
             exports: exports.map(|v| v.to_owned()),
             results: results_,
@@ -54,6 +58,11 @@ impl Function {
     }
 
     #[inline]
+    pub fn function_index(&self) -> FuncTempIndex {
+        self.func_idx
+    }
+
+    #[inline]
     pub fn signature(&self) -> &str {
         &self.signature
     }
@@ -61,6 +70,11 @@ impl Function {
     #[inline]
     pub fn exports(&self) -> Option<&str> {
         self.exports.as_ref().map(|v| v.as_str())
+    }
+
+    #[inline]
+    pub fn dependencies(&self) -> &[FuncTempIndex] {
+        &self.dependencies
     }
 
     #[inline]
@@ -89,9 +103,13 @@ impl core::fmt::Debug for Function {
         let mut d = f.debug_struct("Function");
         let mut d = &mut d;
 
+        d = d.field("index", &self.func_idx);
         d = d.field("signature", &self.signature);
         if let Some(exports) = self.exports.as_ref() {
             d = d.field("exports", &exports);
+        }
+        if self.dependencies.len() > 0 {
+            d = d.field("dependencies", &self.dependencies);
         }
         d = d.field("params", &LocalIter(&self.params));
         d = d.field("results", &LocalIter(&self.results));
@@ -102,6 +120,7 @@ impl core::fmt::Debug for Function {
 }
 
 pub struct FunctionBuilder {
+    func_idx: FuncTempIndex,
     signature: String,
     exports: Option<String>,
     results: Vec<LocalVarDescriptor>,
@@ -182,6 +201,7 @@ impl FunctionBuilder {
         }
 
         let Self {
+            func_idx,
             signature,
             exports,
             buf,
@@ -194,15 +214,17 @@ impl FunctionBuilder {
             locals,
         } = self;
 
-        let (codes, locals) = MinimalCodeOptimizer::optimize(buf, &params, &locals)?;
+        let (codes, locals, dependencies) = MinimalCodeOptimizer::optimize(buf, &params, &locals)?;
 
         Ok(Function {
+            func_idx,
             signature,
             exports,
             params,
             results,
             locals,
             codes: Arc::new(codes),
+            dependencies,
         })
     }
 }
@@ -767,8 +789,13 @@ impl core::fmt::Debug for CodeFragment<'_> {
             Op::Call => {
                 write!(
                     f,
-                    "/* {:04x} {:04x} */ %{} = {} ${} (",
-                    len, self.opcode as usize, self.params[0], self.opcode, self.params[1],
+                    "/* {:04x} {:04x} */ %{} = {} ${} /* {:#x} */ (",
+                    len,
+                    self.opcode as usize,
+                    self.params[0],
+                    self.opcode,
+                    self.params[1],
+                    self.params[1],
                 )?;
                 for (index, param) in self.params.iter().skip(2).enumerate() {
                     if index == 0 {
@@ -782,8 +809,8 @@ impl core::fmt::Debug for CodeFragment<'_> {
             Op::CallV => {
                 write!(
                     f,
-                    "/* {:04x} {:04x} */ {} ${} (",
-                    len, self.opcode as usize, self.opcode, self.params[1],
+                    "/* {:04x} {:04x} */ {} ${} /* {:#x} */ (",
+                    len, self.opcode as usize, self.opcode, self.params[1], self.params[1],
                 )?;
                 for (index, param) in self.params.iter().skip(2).enumerate() {
                     if index == 0 {
@@ -998,5 +1025,26 @@ impl Constant {
             Self::I64(v) => Some(*v),
             _ => None,
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FuncTempIndex(u32);
+
+impl FuncTempIndex {
+    #[inline]
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
+
+impl core::fmt::Debug for FuncTempIndex {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:#x}", self.0)
     }
 }

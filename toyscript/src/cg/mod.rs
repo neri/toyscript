@@ -14,7 +14,7 @@ use ast::{
 use keyword::ModifierFlag;
 use scope::{Scope, VariableDescriptor, VariableStorage};
 use token::TokenPosition;
-use toyir::{self, Import, Primitive};
+use toyir::{self, FuncTempIndex, Import, Primitive};
 use types::{InferredType, Resolve, TypeDescriptor};
 
 pub struct CodeGen;
@@ -44,6 +44,7 @@ impl CodeGen {
                         }
 
                         module.add_import(Import::func(
+                            FuncTempIndex::new(func_desc.function_index().as_u32()),
                             func_desc.signature(),
                             import_from.1,
                             import_from.0,
@@ -75,6 +76,13 @@ impl CodeGen {
             }
         }
 
+        module.optimize().map_err(|_e| {
+            CompileError::internal_inconsistency(
+                &format!("internal error"),
+                ErrorPosition::Unspecified,
+            )
+        })?;
+
         Ok(module)
     }
 
@@ -100,6 +108,7 @@ impl CodeGen {
         let return_type = func_desc.result_type().clone();
 
         let mut builder = toyir::Function::new(
+            FuncTempIndex::new(func_desc.function_index().as_u32()),
             signature,
             exports,
             scope

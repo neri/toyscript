@@ -150,29 +150,27 @@ impl TypeSystem {
             ));
         }
 
-        for is_import in &[true, false] {
-            for statement in ast.program() {
-                match statement {
-                    Statement::Function(func_decl) => {
-                        if *is_import == func_decl.import_from().is_some() {
-                            let func = FunctionDescriptor::parse(
-                                func_decl,
-                                &system,
-                                FuncIndex(system.functions.len() as u32),
-                            )?;
-                            if system.global_object(func.identifier().as_str()).is_none() {
-                                system.global_objects.insert(
-                                    func.identifier().as_string().clone(),
-                                    GlobalObjectIndex::Funtion(func.function_index()),
-                                );
-                                system.functions.push(Arc::new(func));
-                            } else {
-                                return Err(CompileError::duplicate_identifier(func.identifier()));
-                            }
-                        }
+        // for is_import in &[true, false] {
+        for statement in ast.program() {
+            match statement {
+                Statement::Function(func_decl) => {
+                    let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
+                    let func = FunctionDescriptor::parse(
+                        func_decl,
+                        &system,
+                        FuncIndex(system.functions.len() as u32 | hi_bit),
+                    )?;
+                    if system.global_object(func.identifier().as_str()).is_none() {
+                        system.global_objects.insert(
+                            func.identifier().as_string().clone(),
+                            GlobalObjectIndex::Funtion(func.function_index()),
+                        );
+                        system.functions.push(Arc::new(func));
+                    } else {
+                        return Err(CompileError::duplicate_identifier(func.identifier()));
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
 
@@ -566,7 +564,12 @@ impl TypeSystem {
         let funcidx = match self.global_object(identifier)? {
             GlobalObjectIndex::Funtion(v) => v,
         };
-        self.functions.get(funcidx.as_usize())
+        for func in &self.functions {
+            if func.function_index() == funcidx {
+                return Some(func);
+            }
+        }
+        None
     }
 
     #[inline]

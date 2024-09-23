@@ -17,6 +17,11 @@ macro_rules! decl_index {
             }
 
             #[inline]
+            pub const fn as_u32(&self) -> u32 {
+                self.0
+            }
+
+            #[inline]
             pub const fn get(&self) -> u32 {
                 self.0
             }

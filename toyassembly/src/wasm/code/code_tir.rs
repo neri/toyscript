@@ -4,7 +4,7 @@ use super::{BlockInstType, Code};
 use crate::*;
 use ir::Module;
 use leb128::{Leb128Writer, WriteLeb128};
-use toyir::{CodeStreamIter, Primitive};
+use toyir::{CodeStreamIter, FuncTempIndex, Primitive};
 use types::ValType;
 use wasm::opcode::WasmOpcode;
 
@@ -83,11 +83,16 @@ impl FromToyIR {
 
                 TIR::Call | TIR::CallV => {
                     let result = Self::get_params(tir.params(), 0)?;
-                    let target = Self::get_params(tir.params(), 1)?;
-
+                    let target = FuncTempIndex::new(Self::get_params(tir.params(), 1)?);
+                    let target = module.get_temp_func_index(target).ok_or(
+                        AssembleError::internal_inconsistency(
+                            &format!("not found function $temp_{:?}", target),
+                            ErrorPosition::Unspecified,
+                        ),
+                    )?;
                     let target_func = module.get_func_by_index(target).ok_or(
                         AssembleError::internal_inconsistency(
-                            &format!("bad function ${}", target),
+                            &format!("not found function $func{}", target),
                             ErrorPosition::Unspecified,
                         ),
                     )?;

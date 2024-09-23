@@ -42,6 +42,7 @@ pub struct Module {
     pub(self) codes: Codes,
     pub(self) data_segs: DataSegments,
     names: BTreeMap<String, IdType>,
+    func_indexes: BTreeMap<toyir::FuncTempIndex, u32>,
 }
 
 impl Module {
@@ -101,6 +102,10 @@ impl Module {
         let mut module = Module {
             ..Default::default()
         };
+
+        for (k, v) in tir_module.func_indexes() {
+            module.func_indexes.insert(*k, *v);
+        }
 
         Imports::process_tir(&mut module, tir_module.imports())?;
         Functions::process_tir(&mut module, tir_module.functions())?;
@@ -380,6 +385,11 @@ impl Module {
     #[inline]
     pub fn max_global_len(&self) -> usize {
         self.imports.num_import_globals() + self.globals.0.len()
+    }
+
+    #[inline]
+    pub fn get_temp_func_index(&self, index: toyir::FuncTempIndex) -> Option<u32> {
+        self.func_indexes.get(&index).map(|v| *v)
     }
 }
 

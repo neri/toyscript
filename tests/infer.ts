@@ -1,4 +1,4 @@
-function infer() {
+export function infer() {
     let a: int, b, c
     a = b + c
 

@@ -16,6 +16,7 @@ pub struct MinimalCodeOptimizer {
     codes: Vec<u32>,
     params: Vec<LocalVarDescriptor>,
     locals: Vec<LocalVarDescriptor>,
+    call_dependency_list: Vec<FuncTempIndex>,
 }
 
 impl MinimalCodeOptimizer {
@@ -23,7 +24,7 @@ impl MinimalCodeOptimizer {
         codes: Vec<u32>,
         params: &[LocalVarDescriptor],
         locals: &[LocalVarDescriptor],
-    ) -> Result<(Vec<u32>, Vec<LocalVarDescriptor>), OptimizeError> {
+    ) -> Result<(Vec<u32>, Vec<LocalVarDescriptor>, Vec<FuncTempIndex>), OptimizeError> {
         let mut positions = Vec::with_capacity(codes.len() / 4);
         let mut index = 0;
         while let Some(len_opc) = codes.get(index) {
@@ -41,10 +42,15 @@ impl MinimalCodeOptimizer {
             positions,
             params: params.to_vec(),
             locals: locals.to_vec(),
+            call_dependency_list: Vec::new(),
         };
         optimizer._optimize()?;
 
-        Ok((optimizer.codes, optimizer.locals))
+        Ok((
+            optimizer.codes,
+            optimizer.locals,
+            optimizer.call_dependency_list,
+        ))
     }
 
     fn _optimize(&mut self) -> Result<(), OptimizeError> {
@@ -481,14 +487,14 @@ impl MinimalCodeOptimizer {
 
             // compaction & renumber
 
-            fn copy<F>(
+            fn copy<F, R>(
                 array: &[u32],
                 base: ArrayIndex,
                 dest: &mut Vec<u32>,
                 kernel: F,
-            ) -> Result<(), OptimizeError>
+            ) -> Result<R, OptimizeError>
             where
-                F: FnOnce(&mut [u32]) -> Result<(), OptimizeError>,
+                F: FnOnce(&mut [u32]) -> Result<R, OptimizeError>,
             {
                 let si = base.as_usize();
                 let len_opc = *array.get(si).ok_or(OptimizeError::OutOfCodes(si))?;
@@ -501,9 +507,9 @@ impl MinimalCodeOptimizer {
                     dest.push(*array.get(si + i).unwrap());
                 }
                 let data = dest.get_mut(di..di + len - 1).unwrap();
-                kernel(data)?;
+                let result = kernel(data)?;
 
-                Ok(())
+                Ok(result)
             }
 
             fn emit(array: &mut Vec<u32>, opcode: Op, params: &[u32]) {
@@ -543,7 +549,7 @@ impl MinimalCodeOptimizer {
                         }
 
                         Op::Call | Op::CallV => {
-                            copy(&self.codes, base, new_code, |a| {
+                            let target = copy(&self.codes, base, new_code, |a| {
                                 for item in a.iter_mut().skip(2).rev() {
                                     let old_value = *item;
                                     let new_value = value_stack.expect(base, old_value)?;
@@ -554,8 +560,9 @@ impl MinimalCodeOptimizer {
                                 }
                                 a[0] = new_ci;
 
-                                Ok(())
+                                Ok(a[1])
                             })?;
+                            self.add_dependency_list(FuncTempIndex::new(target));
                         }
 
                         Op::Drop => {
@@ -746,6 +753,13 @@ impl MinimalCodeOptimizer {
         }
 
         Ok(())
+    }
+
+    #[inline]
+    fn add_dependency_list(&mut self, target: FuncTempIndex) {
+        if !self.call_dependency_list.contains(&target) {
+            self.call_dependency_list.push(target);
+        }
     }
 
     /// Drops a droppable instruction chained to the specified instruction
@@ -950,26 +964,34 @@ impl MinimalCodeOptimizer {
                 return Ok(true);
             }
             (Some(Constant::F32(lhs)), Some(Constant::F32(rhs))) => {
-                let value = match opcode {
+                let mut value = match opcode {
                     Op::Add => lhs + rhs,
                     Op::Sub => lhs - rhs,
                     Op::Mul => lhs * rhs,
                     Op::DivS => lhs / rhs,
                     _ => return Ok(false),
                 };
+                if value.is_nan() {
+                    // Correct for different NaN bit patterns on some platforms
+                    value = f32::from_bits(0x7FC0_0000);
+                }
                 self.replace_nop(lhs_a)?;
                 self.replace_nop(rhs_a)?;
                 self.replace_f32_const(base, result, value)?;
                 return Ok(true);
             }
             (Some(Constant::F64(lhs)), Some(Constant::F64(rhs))) => {
-                let value = match opcode {
+                let mut value = match opcode {
                     Op::Add => lhs + rhs,
                     Op::Sub => lhs - rhs,
                     Op::Mul => lhs * rhs,
                     Op::DivS => lhs / rhs,
                     _ => return Ok(false),
                 };
+                if value.is_nan() {
+                    // Correct for different NaN bit patterns on some platforms
+                    value = f64::from_bits(0x7FF8_0000_0000_0000);
+                }
                 self.replace_nop(lhs_a)?;
                 self.replace_nop(rhs_a)?;
                 self.replace_f64_const(base, result, value)?;
@@ -1441,11 +1463,15 @@ impl MinimalCodeOptimizer {
     }
 
     fn replace_opcode(&mut self, target: ArrayIndex, opcode: Op) -> Result<(), OptimizeError> {
-        let (len, _) = self.get_op(target)?;
-        self.codes[target.as_usize()] = ((len as u32) << 16) | (opcode as u32);
+        let Some(p) = self.codes.get_mut(target.as_usize()) else {
+            return Err(OptimizeError::OutOfCodes(target.as_usize()));
+        };
+        let len_opc = *p;
+        *p = (len_opc & 0xFFFF_0000) | (opcode as u32);
         Ok(())
     }
 
+    #[inline]
     fn replace_nop(&mut self, target: ArrayIndex) -> Result<(), OptimizeError> {
         self.replace_opcode(target, Op::Nop)
     }

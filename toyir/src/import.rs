@@ -14,6 +14,7 @@ pub enum ImportDescriptor {
 
 #[derive(Debug)]
 pub struct ImportFunction {
+    func_idx: FuncTempIndex,
     signature: String,
     params: Vec<Primitive>,
     results: Vec<Primitive>,
@@ -22,6 +23,7 @@ pub struct ImportFunction {
 impl Import {
     #[inline]
     pub fn func(
+        func_idx: FuncTempIndex,
         signature: &str,
         name: &str,
         from: &str,
@@ -32,6 +34,7 @@ impl Import {
             name: name.to_owned(),
             from: from.to_owned(),
             import_desc: ImportDescriptor::Function(ImportFunction {
+                func_idx,
                 signature: signature.to_owned(),
                 params: params.to_vec(),
                 results: results.to_vec(),
@@ -56,6 +59,11 @@ impl Import {
 }
 
 impl ImportFunction {
+    #[inline]
+    pub fn function_index(&self) -> FuncTempIndex {
+        self.func_idx
+    }
+
     #[inline]
     pub fn signature(&self) -> &str {
         &self.signature
