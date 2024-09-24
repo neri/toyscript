@@ -5,7 +5,7 @@ use crate::{
     *,
 };
 use ast::{
-    decoration::Decoration, expression::Expression, function::FunctionSyntaxFlavor,
+    decorator::Decorator, expression::Expression, function::FunctionSyntaxFlavor,
     typeparam::TypeParameter,
 };
 use core::ops::ControlFlow;
@@ -13,7 +13,7 @@ use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
 pub struct ClassDeclaration {
-    decorations: Vec<Decoration>,
+    decorators: Vec<Decorator>,
     modifiers: ModifierFlag,
     identifier: Identifier,
     type_params: Vec<TypeParameter>,
@@ -25,7 +25,7 @@ pub struct ClassDeclaration {
 
 impl ClassDeclaration {
     pub fn parse(
-        decorations: Vec<Decoration>,
+        decorators: Vec<Decorator>,
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
@@ -68,7 +68,20 @@ impl ClassDeclaration {
                             continue;
                         }
                         match keyword {
-                            //
+                            Keyword::Constructor => {
+                                if !modifiers.is_empty() {
+                                    return Err(CompileError::unexpected_token(&token));
+                                }
+                                let member = FunctionDeclaration::parse(
+                                    FunctionSyntaxFlavor::Class,
+                                    Vec::new(),
+                                    modifiers.as_slice(),
+                                    &token,
+                                    Some(&token),
+                                    tokens,
+                                )?;
+                                functions.push(member);
+                            }
                             _ => return Err(CompileError::unexpected_token(&token)),
                         }
                     }
@@ -101,12 +114,12 @@ impl ClassDeclaration {
                                 variables.push(member);
                             }
                             MemberKind::Function => {
-                                tokens.unshift();
                                 let member = FunctionDeclaration::parse(
                                     FunctionSyntaxFlavor::Class,
                                     Vec::new(),
                                     modifiers.as_slice(),
-                                    token,
+                                    &token,
+                                    Some(&token),
                                     tokens,
                                 )?;
                                 functions.push(member);
@@ -125,7 +138,7 @@ impl ClassDeclaration {
             .merged(&tokens.peek_last().unwrap().position());
 
         Ok(Self {
-            decorations,
+            decorators,
             modifiers,
             identifier,
             type_params,
@@ -137,8 +150,8 @@ impl ClassDeclaration {
     }
 
     #[inline]
-    pub fn decorations(&self) -> &[Decoration] {
-        &self.decorations
+    pub fn decorations(&self) -> &[Decorator] {
+        &self.decorators
     }
 
     #[inline]
@@ -185,7 +198,7 @@ enum MemberKind {
 
 #[derive(Debug)]
 pub struct EnumDeclaration {
-    decorations: Vec<Decoration>,
+    decorations: Vec<Decorator>,
     modifiers: ModifierFlag,
     identifier: Identifier,
     variants: Vec<(Identifier, Option<Expression>)>,
@@ -193,7 +206,7 @@ pub struct EnumDeclaration {
 
 impl EnumDeclaration {
     pub fn parse(
-        decorations: Vec<Decoration>,
+        decorations: Vec<Decorator>,
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
@@ -255,7 +268,7 @@ impl EnumDeclaration {
     }
 
     #[inline]
-    pub fn decorations(&self) -> &[Decoration] {
+    pub fn decorations(&self) -> &[Decorator] {
         &self.decorations
     }
 

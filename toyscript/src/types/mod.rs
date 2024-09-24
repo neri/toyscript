@@ -150,7 +150,6 @@ impl TypeSystem {
             ));
         }
 
-        // for is_import in &[true, false] {
         for statement in ast.program() {
             match statement {
                 Statement::Function(func_decl) => {

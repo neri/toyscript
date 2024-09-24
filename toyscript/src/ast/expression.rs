@@ -122,6 +122,21 @@ impl Expression {
         }
     }
 
+    pub fn is_constant(&self) -> bool {
+        match self.item.as_ref() {
+            Unary::Void(_)
+            | Unary::NumericLiteral(_, _)
+            | Unary::FloatingPointLiteral(_, _)
+            | Unary::StringLiteral(_, _)
+            | Unary::CharLiteral(_, _)
+            | Unary::Constant(_, _) => true,
+
+            Unary::Parenthesis(expression) => expression.is_constant(),
+
+            _ => false,
+        }
+    }
+
     pub fn parse(
         tokens: &mut TokenStream<Keyword>,
         allowed_ending: Option<&[TokenType<Keyword>]>,

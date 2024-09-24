@@ -80,7 +80,7 @@ impl Module {
         for item in &self.imports {
             match item.import_desc() {
                 ImportDescriptor::Function(func) => {
-                    if item.is_external() {
+                    if item.is_exported() {
                         add_retain(&mut retain_list, func.function_index());
                     }
                 }

@@ -2,12 +2,13 @@
 
 use super::{block::Block, typeparam::TypeParameter, Identifier};
 use crate::{keyword::ModifierFlag, *};
-use ast::{class::TypeDescriptor, decoration::Decoration};
+use ast::{class::TypeDescriptor, decorator::Decorator};
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
 pub struct FunctionDeclaration {
-    decorations: Vec<Decoration>,
+    kind: FunctionKind,
+    decorators: Vec<Decorator>,
     modifiers: ModifierFlag,
     identifier: Identifier,
     import_from: Option<(String, String)>,
@@ -27,20 +28,34 @@ pub enum FunctionSyntaxFlavor {
 impl FunctionDeclaration {
     pub fn parse(
         flavor: FunctionSyntaxFlavor,
-        decorations: Vec<Decoration>,
+        decorators: Vec<Decorator>,
         modifier_tokens: &[Token<Keyword>],
-        decisive_token: Token<Keyword>,
+        decisive_token: &Token<Keyword>,
+        id_token: Option<&Token<Keyword>>,
         tokens: &mut TokenStream<Keyword>,
     ) -> Result<Self, CompileError> {
         let start_token = modifier_tokens
             .iter()
             .min_by(|a, b| a.position().start().cmp(&b.position().start()))
-            .unwrap_or(&decisive_token);
+            .unwrap_or(decisive_token);
+
+        let mut kind = FunctionKind::Default;
 
         let modifiers = ModifierFlag::from_tokens(modifier_tokens, &[ModifierFlag::EXPORT])
             .map_err(|token| CompileError::unexpected_token(&token))?;
 
-        let identifier = Identifier::from_tokens(tokens)?;
+        let identifier = if let Some(id_token) = id_token {
+            match id_token.token_type() {
+                TokenType::Keyword(keyword) => match keyword {
+                    Keyword::Constructor => kind = FunctionKind::Constructor,
+                    _ => {}
+                },
+                _ => {}
+            }
+            Identifier::from_token(id_token)
+        } else {
+            Identifier::from_tokens(tokens)?
+        };
 
         let type_params = TypeParameter::parse(tokens)?;
 
@@ -95,7 +110,8 @@ impl FunctionDeclaration {
             .merged(&tokens.peek_last().unwrap().position());
 
         Ok(FunctionDeclaration {
-            decorations,
+            kind,
+            decorators,
             modifiers,
             identifier,
             import_from,
@@ -108,8 +124,8 @@ impl FunctionDeclaration {
     }
 
     #[inline]
-    pub fn decorations(&self) -> &[Decoration] {
-        &self.decorations
+    pub fn decorations(&self) -> &[Decorator] {
+        &self.decorators
     }
 
     #[inline]
@@ -142,6 +158,11 @@ impl FunctionDeclaration {
     #[inline]
     pub fn result_type(&self) -> Option<&TypeDescriptor> {
         self.result_type.as_ref()
+    }
+
+    #[inline]
+    pub fn kind(&self) -> FunctionKind {
+        self.kind
     }
 
     #[inline]
@@ -179,4 +200,11 @@ impl Parameter {
     pub fn type_desc(&self) -> &TypeDescriptor {
         &self.type_desc
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FunctionKind {
+    #[default]
+    Default,
+    Constructor,
 }

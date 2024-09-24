@@ -1,7 +1,7 @@
 # ToyIR
 
 * ToyIR is an intermediate language designed for internal processing of ToyScript. NOT FOR EXTERNAL EXCHANGE.
-* Most opcodes have corresponding WebAssembly instructions, but they differ significantly from raw WebAssembly in that they make stack inputs and outputs explicit.
+* Most opcode has a corresponding WebAssembly instruction, which differs significantly from raw WebAssembly in that it explicitly specifies stack input and output. However, stack I/O is strictly determined on a per-instruction basis, so it is not possible to specify a value that deviates from the expected value.
 * Variable length using an array of 32-bit words, with the first word in the same format in all opcodes.
 
 ### First word format
@@ -16,17 +16,26 @@
 * The specific value of the opcode is currently undetermined. They are subject to change with each build.
 * Some instructions may be of indeterminate length or may have trailing padding.
 
+### Nop
+
+```
+[(len|opcode), dummy, ...]
+:= nop (dummy, ...)
+```
+
+* This instruction does nothing. The length of the instruction is indefinite and may be followed by a dummy parameter for padding.
+
 ### Blocks
 
 ```
 [(len|opcode), label]
--> %label = block
+:= %label = block
 
 [(len|opcode), label]
--> %label = loop
+:= %label = loop
 
 [(len|opcode), label]
--> end %label
+:= end %label
 ```
 
 * Define the start or end of a block with `%label`. 
@@ -37,20 +46,23 @@
 
 ```
 [(len|opcode), label]
--> br %label
+:= br %label
 
 [(len|opcode), label, cond]
--> br_if %label, %cond
+:= br_if %label, %cond
+   { %cond } -> {}
 ```
 
 ### Call
 
 ```
 [(len|opcode) result, label, params, ...]
--> %result = call $label, %params, ...
+:= %result = call $label, %params, ...
+   { %params, ... } -> { %result }
 
 [(len|opcode) dummy, label, params, ...]
--> call_v $label, %params, ...
+:= call_v $label, %params, ...
+   { %params, ... } -> {}
 ```
 
 * The `call_v` instruction has the same format as the `call` instruction, but the return value does not actually exist.
@@ -60,58 +72,81 @@
 
 ```
 [(len|opcode)]
--> return
+:= return
 
 [(len|opcode) operand]
--> return %operand
+:= return %operand
+   { %operand } -> {}
 ```
 
 ### Constants
 
 ```
 [(len|opcode), result, i32]
--> %result = i32.const $i32
+:= %result = i32.const $i32
+   {} -> { $i32 }
 
 [(len|opcode), result, a, b]
--> %result = i64.const (a + b)
+:= %result = i64.const (a + b)
+   {} -> { $i64 }
 
 [(len|opcode), result, f32]
--> %result = f32.const $f32
+:= %result = f32.const $f32
+   {} -> { $f32 }
 
 [(len|opcode), result, a, b]
--> %result = f64.const (a + b)
+:= %result = f64.const (a + b)
+   {} -> { $f32 }
 ```
 
 * Only these instructions, which require 64-bit values, are divided by little-endian.
+
+### Local Variables
+
+```
+[(len|opcode), result, index]
+:= %result = local.get $index
+   {} -> { %result }
+
+[(len|opcode), operand, index]
+:= local.set %operand, $index
+   { %operand } -> {}
+
+[(len|opcode), result, index, operand]
+:= %result = local.tee $index, %operand
+   { %operand } -> { %result }
+```
 
 ### Binary Operators
 
 ```
 [(len|opcode), result, lhs, rhs]
--> %result = binop %lhs, %rhs
+:= %result = binop %lhs, %rhs
+   { %lhs, %rhs } -> { %result }
 ```
 
 ### Unary Operators
 
 ```
 [(len|opcode), result, operand]
--> %result = unop %operand
+:= %result = unop %operand
+   { %operand } -> { %result }
 ```
 
 ### Pseudo Unary Operators
 
 ```
 [(len|opcode), result, operand]
--> %result = not %operand
--> %result = xor %operand, $-1
+:= %result = not %operand
+:= %result = xor %operand, $-1
 
 [(len|opcode), result, operand]
--> %result = inc %operand
--> %result = add %operand, $1
+:= %result = inc %operand
+:= %result = add %operand, $1
 
 [(len|opcode), result, operand]
--> %result = dec %operand
--> %result = sub %operand, $1
+:= %result = dec %operand
+:= %result = sub %operand, $1
 ```
 
 * They are treated as unary operators on the IR, but are replaced by appropriate instructions during final code generation.
@@ -120,13 +155,16 @@
 
 ```
 [(len|opcode), result, operand]
--> %result = unary_nop %operand
+:= %result = unary_nop %operand
+   { %operand } -> { %result }
 
 [(len|opcode), result, lhs, rhs]
--> %result = drop_right %lhs, %rhs
+:= %result = drop_right %lhs, %rhs
+   { %lhs, rhs } -> { %result }
 
 [(len|opcode), dummy, lhs, rhs]
--> drop2 %lhs, %rhs
+:= drop2 %lhs, %rhs
+   { %lhs, rhs } -> {}
 ```
 
 * Special instructions for optimization
@@ -138,7 +176,8 @@
 
 ```
 [(len|opcode), result, operand, new_type_id, old_type_id]
--> %result = cast %operand, $old_type as $new_type
+:= %result = cast %operand, $old_type as $new_type
+   { %operand } -> { %result }
 ```
 
 * Typecasts the value of “operand”.

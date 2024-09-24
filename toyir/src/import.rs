@@ -5,7 +5,7 @@ pub struct Import {
     name: String,
     from: String,
     import_desc: ImportDescriptor,
-    is_external: bool,
+    is_exported: bool,
 }
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ impl Import {
         from: &str,
         params: &[Primitive],
         results: &[Primitive],
-        is_external: bool,
+        is_exported: bool,
     ) -> Self {
         Import {
             name: name.to_owned(),
@@ -41,7 +41,7 @@ impl Import {
                 params: params.to_vec(),
                 results: results.to_vec(),
             }),
-            is_external,
+            is_exported,
         }
     }
 
@@ -61,8 +61,8 @@ impl Import {
     }
 
     #[inline]
-    pub const fn is_external(&self) -> bool {
-        self.is_external
+    pub const fn is_exported(&self) -> bool {
+        self.is_exported
     }
 }
 

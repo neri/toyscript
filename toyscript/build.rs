@@ -131,7 +131,7 @@ impl core::fmt::Display for {class_name} {{
 
 impl core::fmt::Debug for {class_name} {{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {{
-        write!(f, \"{{:?}}\", self.as_str())
+        write!(f, \"{class_name}({{}})\", self.as_str())
     }}
 }}
 "

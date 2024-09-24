@@ -67,15 +67,6 @@ impl PartialEq for Identifier {
     }
 }
 
-// impl Clone for Identifier {
-//     #[inline]
-//     fn clone(&self) -> Self {
-//         Self {
-//             str: self.str.clone()
-//         }
-//     }
-// }
-
 impl core::fmt::Display for Identifier {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

@@ -58,11 +58,18 @@ impl CodeGen {
                     }
                 }
 
+                Statement::Expression(expr) => {
+                    if expr.is_empty() || expr.is_constant() {
+                        // ignored
+                    } else {
+                        return Err(CompileError::out_of_context("", expr.position()));
+                    }
+                }
+
                 Statement::Block(_)
                 | Statement::Break(_)
                 | Statement::Continue(_)
                 | Statement::Class(_)
-                | Statement::Expression(_)
                 | Statement::IfStatement(_)
                 | Statement::ReturnStatement(_)
                 | Statement::Variable(_)

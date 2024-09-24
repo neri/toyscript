@@ -2,13 +2,13 @@ use crate::*;
 use token::TokenPosition;
 
 #[derive(Debug)]
-pub struct Decoration {
+pub struct Decorator {
     identifier: Identifier,
     params: Vec<Token<Keyword>>,
     position: TokenPosition,
 }
 
-impl Decoration {
+impl Decorator {
     pub fn parse(
         tokens: &mut TokenStream<Keyword>,
         decisive_token: Token<Keyword>,

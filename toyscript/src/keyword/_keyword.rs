@@ -354,6 +354,6 @@ impl core::fmt::Display for Keyword {
 
 impl core::fmt::Debug for Keyword {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{:?}", self.as_str())
+        write!(f, "Keyword({})", self.as_str())
     }
 }

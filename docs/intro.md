@@ -33,16 +33,19 @@ export function add(a: int, b: int): int {
 ```
 ['export'] 'declare' 'function' identifier1 '('
 [identifier2 ':' type2 (',' identifier2n ':' type2n)* [','] ]
-')' [':' type]
+')' [':' type3]
 ```
 
 - Declares a function with the given identifier and argument list. The function entity is provided by an external module or environment.
+- If the `export` modifier is present, even functions not referenced from within the module will be output to binary.
 
 ### declare-type statement
 
 ```
 'declare' 'type' identifer '=' type
 ```
+
+- Defines an alias for a type. The new type is interconvertible with the original type, but is treated as a different type unless explicitly converted.
 
 ### function statement
 
@@ -53,6 +56,7 @@ export function add(a: int, b: int): int {
 ```
 
 - Defines the function `identifier1`, with arguments of `identifier2n` and `type2n`, return type of `type3`, and contents of `expr`.
+- If the `export` modifier is present, even functions not referenced from within the module will be output to binary.
 
 ### for statement
 

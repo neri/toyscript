@@ -124,8 +124,6 @@ impl Module {
             }
             self.codes.0.extend(codes);
         } else {
-            self.types.0.clear();
-            self.imports.0.clear();
             self.tables.0.clear();
             self.elems.0.clear();
             self.start = None;
