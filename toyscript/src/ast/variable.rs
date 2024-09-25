@@ -4,7 +4,7 @@ use super::expression::Expression;
 use super::Identifier;
 use crate::keyword::Keyword;
 use crate::*;
-use ast::class::TypeDescriptor;
+use ast::class::TypeDeclaration;
 use token::{Token, TokenPosition, TokenStream};
 
 #[allow(dead_code)]
@@ -17,7 +17,7 @@ pub struct VariableDeclaration {
 #[derive(Debug)]
 pub struct Variable {
     identifier: Identifier,
-    type_desc: Option<TypeDescriptor>,
+    type_decl: Option<TypeDeclaration>,
     assignment: Option<Expression>,
     position: TokenPosition,
     is_mutable: bool,
@@ -67,7 +67,7 @@ impl VariableDeclaration {
             let position_start = identifier.id_position().start();
 
             let type_desc = if let Ok(_) = tokens.expect_symbol(':') {
-                let var_type = TypeDescriptor::expect(tokens)?;
+                let var_type = TypeDeclaration::expect(tokens)?;
                 Some(var_type)
             } else {
                 None
@@ -84,7 +84,7 @@ impl VariableDeclaration {
 
             variables.push(Variable {
                 identifier,
-                type_desc,
+                type_decl: type_desc,
                 assignment,
                 position: TokenPosition::new(position_start as u32, position_end as u32),
                 is_mutable,
@@ -137,8 +137,8 @@ impl VariableDeclaration {
 
         let identifier = Identifier::from_tokens(tokens)?;
 
-        let type_desc = if let Ok(_) = tokens.expect_symbol(':') {
-            Some(TypeDescriptor::expect(tokens)?)
+        let type_decl = if let Ok(_) = tokens.expect_symbol(':') {
+            Some(TypeDeclaration::expect(tokens)?)
         } else {
             None
         };
@@ -147,7 +147,7 @@ impl VariableDeclaration {
 
         variables.push(Variable {
             identifier,
-            type_desc,
+            type_decl,
             assignment: None,
             position: TokenPosition::new(position_start as u32, position_end as u32),
             is_mutable,
@@ -174,8 +174,8 @@ impl Variable {
     }
 
     #[inline]
-    pub fn type_desc(&self) -> Option<&TypeDescriptor> {
-        self.type_desc.as_ref()
+    pub fn type_decl(&self) -> Option<&TypeDeclaration> {
+        self.type_decl.as_ref()
     }
 
     #[inline]

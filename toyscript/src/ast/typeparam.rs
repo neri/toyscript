@@ -1,11 +1,11 @@
 use super::*;
-use class::TypeDescriptor;
+use class::TypeDeclaration;
 use token::TokenStream;
 
 #[derive(Debug)]
 pub struct TypeParameter {
     identifier: Identifier,
-    extends: Option<TypeDescriptor>,
+    extends: Option<TypeDeclaration>,
 }
 
 impl TypeParameter {
@@ -19,7 +19,7 @@ impl TypeParameter {
         loop {
             let identifier = Identifier::from_tokens(tokens)?;
             let extends = if tokens.expect_keyword(Keyword::Extends).is_ok() {
-                Some(TypeDescriptor::expect(tokens)?)
+                Some(TypeDeclaration::expect(tokens)?)
             } else {
                 None
             };
@@ -42,7 +42,7 @@ impl TypeParameter {
     }
 
     #[inline]
-    pub fn extends(&self) -> Option<&TypeDescriptor> {
+    pub fn extends(&self) -> Option<&TypeDeclaration> {
         self.extends.as_ref()
     }
 }

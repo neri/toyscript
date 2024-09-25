@@ -60,6 +60,9 @@ impl TypeSystem {
         };
 
         for primitive in Primitive::all_values() {
+            // if primitive.is_float() {
+            //     continue;
+            // }
             let desc = TypeDescriptor::from_primitive(*primitive);
             system.types.insert(desc.identifier().to_string(), desc);
         }
@@ -202,7 +205,7 @@ impl TypeSystem {
     }
 
     #[inline]
-    pub fn from_ast(&self, ast_type: &ast::class::TypeDescriptor) -> Option<&Arc<TypeDescriptor>> {
+    pub fn from_ast(&self, ast_type: &ast::class::TypeDeclaration) -> Option<&Arc<TypeDescriptor>> {
         self.get(&ast_type.as_string())
     }
 
@@ -330,26 +333,26 @@ impl TypeSystem {
     fn _make_simple_alias(&mut self, identifier: &str, target: &str) -> Result<(), CompileError> {
         self.make_alias(
             &Identifier::new(identifier),
-            &ast::class::TypeDescriptor::Simple(Identifier::new(target)),
+            &ast::class::TypeDeclaration::Simple(Identifier::new(target)),
         )
     }
 
     pub fn make_alias(
         &mut self,
         identifier: &Identifier,
-        type_desc: &ast::class::TypeDescriptor,
+        type_decl: &ast::class::TypeDeclaration,
     ) -> Result<(), CompileError> {
         if self.get(identifier.as_str()).is_some() {
             return Err(CompileError::duplicate_identifier(identifier));
         }
-        if let Some(desc) = self.from_ast(type_desc) {
+        if let Some(desc) = self.from_ast(type_decl) {
             if desc.is_special_type() {
-                return Err(CompileError::invalid_type(&type_desc.identifier()));
+                return Err(CompileError::invalid_type(&type_decl.identifier()));
             }
             let desc = TypeDescriptor::make_alias(identifier.as_str(), &desc);
             self.types.insert(identifier.to_string(), Arc::new(desc));
         } else {
-            return Err(CompileError::identifier_not_found(&type_desc.identifier()));
+            return Err(CompileError::identifier_not_found(&type_decl.identifier()));
         }
         Ok(())
     }
@@ -593,12 +596,12 @@ pub trait Resolve<T: ?Sized> {
     fn resolve_primitive(&self, v: &T) -> Option<Primitive>;
 }
 
-impl Resolve<ast::class::TypeDescriptor> for TypeSystem {
-    fn resolve(&self, desc: &ast::class::TypeDescriptor) -> Option<Arc<TypeDescriptor>> {
+impl Resolve<ast::class::TypeDeclaration> for TypeSystem {
+    fn resolve(&self, desc: &ast::class::TypeDeclaration) -> Option<Arc<TypeDescriptor>> {
         self.resolve(desc.as_string().as_str())
     }
 
-    fn resolve_primitive(&self, desc: &ast::class::TypeDescriptor) -> Option<Primitive> {
+    fn resolve_primitive(&self, desc: &ast::class::TypeDeclaration) -> Option<Primitive> {
         self.resolve(desc)
             .and_then(|ref v| self.resolve_primitive(v))
     }

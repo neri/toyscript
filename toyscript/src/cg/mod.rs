@@ -99,13 +99,6 @@ impl CodeGen {
         func_desc: &types::function::FunctionDescriptor,
         types: &TypeSystem,
     ) -> Result<toyir::Function, CompileError> {
-        if func_decl.modifiers().contains(ModifierFlag::IMPORT) {
-            return Err(CompileError::internal_inconsistency(
-                "",
-                func_decl.position().into(),
-            ));
-        }
-
         let var_storage = VariableStorage::new(types);
         let mut scope = var_storage.root_scope();
 
@@ -199,7 +192,7 @@ impl CodeGen {
         var_decl: &VariableDeclaration,
     ) -> Result<(), CompileError> {
         for var_decl in var_decl.varibales() {
-            let type_desc = match var_decl.type_desc() {
+            let type_desc = match var_decl.type_decl() {
                 Some(type_desc) => scope
                     .types()
                     .get(type_desc.identifier().as_str())

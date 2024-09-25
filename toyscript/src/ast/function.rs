@@ -2,7 +2,7 @@
 
 use super::{block::Block, typeparam::TypeParameter, Identifier};
 use crate::{keyword::ModifierFlag, *};
-use ast::{class::TypeDescriptor, decorator::Decorator};
+use ast::{class::TypeDeclaration, decorator::Decorator};
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub struct FunctionDeclaration {
     import_from: Option<(String, String)>,
     type_params: Vec<TypeParameter>,
     parameters: Box<[Parameter]>,
-    result_type: Option<TypeDescriptor>,
+    result_type: Option<TypeDeclaration>,
     body: Block,
     position: TokenPosition,
 }
@@ -70,7 +70,7 @@ impl FunctionDeclaration {
             };
 
             expect_symbol(tokens, ':')?;
-            let var_type = TypeDescriptor::expect(tokens)?;
+            let var_type = TypeDeclaration::expect(tokens)?;
             parameters.push(Parameter::new(var_name, var_type));
 
             let next = expect(tokens, &[TokenType::Symbol(','), TokenType::Symbol(')')])?;
@@ -80,7 +80,7 @@ impl FunctionDeclaration {
         }
 
         let result_type = if tokens.expect_symbol(':').is_ok() {
-            Some(TypeDescriptor::expect(tokens)?)
+            Some(TypeDeclaration::expect(tokens)?)
         } else {
             None
         };
@@ -156,7 +156,7 @@ impl FunctionDeclaration {
     }
 
     #[inline]
-    pub fn result_type(&self) -> Option<&TypeDescriptor> {
+    pub fn result_type(&self) -> Option<&TypeDeclaration> {
         self.result_type.as_ref()
     }
 
@@ -179,15 +179,15 @@ impl FunctionDeclaration {
 #[derive(Debug, PartialEq)]
 pub struct Parameter {
     identifier: Identifier,
-    type_desc: TypeDescriptor,
+    type_decl: TypeDeclaration,
 }
 
 impl Parameter {
     #[inline]
-    pub fn new(identifier: Identifier, type_desc: TypeDescriptor) -> Self {
+    pub fn new(identifier: Identifier, type_decl: TypeDeclaration) -> Self {
         Self {
             identifier,
-            type_desc,
+            type_decl,
         }
     }
 
@@ -197,8 +197,8 @@ impl Parameter {
     }
 
     #[inline]
-    pub fn type_desc(&self) -> &TypeDescriptor {
-        &self.type_desc
+    pub fn type_decl(&self) -> &TypeDeclaration {
+        &self.type_decl
     }
 }
 

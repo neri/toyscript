@@ -289,11 +289,11 @@ impl EnumDeclaration {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TypeDescriptor {
+pub enum TypeDeclaration {
     Simple(Identifier),
 }
 
-impl TypeDescriptor {
+impl TypeDeclaration {
     pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, CompileError> {
         let token = tokens.next_non_blank();
         match token.token_type() {
@@ -330,12 +330,12 @@ impl TypeDescriptor {
 
     pub fn identifier(&self) -> &Identifier {
         match self {
-            TypeDescriptor::Simple(v) => v,
+            TypeDeclaration::Simple(v) => v,
         }
     }
 }
 
-impl Clone for TypeDescriptor {
+impl Clone for TypeDeclaration {
     fn clone(&self) -> Self {
         match self {
             Self::Simple(arg0) => Self::Simple(arg0.clone()),

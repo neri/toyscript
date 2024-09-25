@@ -14,6 +14,7 @@ pub struct Scope<'a> {
     storage: &'a VariableStorage<'a>,
     parent: Option<&'a Scope<'a>>,
     variables: Vec<(String, LocalIndex)>,
+    defer_index: Option<BlockIndex>,
     break_index: Option<BlockIndex>,
     continue_index: Option<BlockIndex>,
 }
@@ -71,6 +72,7 @@ impl<'a> Scope<'a> {
             storage,
             parent: None,
             variables: Vec::new(),
+            defer_index: None,
             break_index: None,
             continue_index: None,
         }
@@ -86,6 +88,7 @@ impl<'a> Scope<'a> {
             storage: self.storage,
             parent: Some(self),
             variables: Vec::new(),
+            defer_index: self.defer_index,
             break_index: break_index.or(self.break_index),
             continue_index: continue_index.or(self.continue_index),
         }
@@ -101,6 +104,11 @@ impl Scope<'_> {
     #[inline]
     pub fn parent(&self) -> Option<&Self> {
         self.parent
+    }
+
+    #[inline]
+    pub fn defer_index(&self) -> Option<BlockIndex> {
+        self.defer_index
     }
 
     #[inline]

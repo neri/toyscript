@@ -3,7 +3,7 @@
 use crate::{keyword::Keyword, *};
 use ast::{
     block::Block,
-    class::{ClassDeclaration, EnumDeclaration, TypeDescriptor},
+    class::{ClassDeclaration, EnumDeclaration, TypeDeclaration},
     decorator::Decorator,
     expression::Expression,
     function::{FunctionDeclaration, FunctionSyntaxFlavor},
@@ -27,7 +27,7 @@ pub enum Statement {
     Variable(VariableDeclaration),
 
     /// Type Declaration
-    TypeAlias(Identifier, TypeDescriptor),
+    TypeAlias(Identifier, TypeDeclaration),
 
     /// Class Declaration
     Class(Box<ClassDeclaration>),
@@ -220,9 +220,9 @@ impl Statement {
                                         }
                                         let identifier = Identifier::from_tokens(tokens)?;
                                         expect_symbol(tokens, '=')?;
-                                        let type_desc = TypeDescriptor::expect(tokens)?;
+                                        let type_decl = TypeDeclaration::expect(tokens)?;
                                         expect_eol(tokens)?;
-                                        return Ok(Self::TypeAlias(identifier, type_desc));
+                                        return Ok(Self::TypeAlias(identifier, type_decl));
                                     }
                                     _ => return Err(CompileError::unexpected_token(&token)),
                                 },

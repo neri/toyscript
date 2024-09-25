@@ -2,7 +2,7 @@
 
 use super::Identifier;
 use crate::{keyword::Keyword, *};
-use ast::{class::TypeDescriptor, float::Float, integer::Integer};
+use ast::{class::TypeDeclaration, float::Float, integer::Integer};
 use core::ops::ControlFlow;
 use token::{QuoteType, StringLiteralError, TokenPosition, TokenStream};
 
@@ -54,7 +54,7 @@ pub enum Unary {
     Invoke(Box<Unary>, Box<[Expression]>),
 
     /// unary as a type
-    Assertion(Box<Unary>, TypeDescriptor, TokenPosition),
+    Assertion(Box<Unary>, TypeDeclaration, TokenPosition),
 }
 
 #[derive(Debug)]
@@ -75,7 +75,7 @@ pub enum FlatUnary {
 
     Member(Identifier),
 
-    Assertion(TypeDescriptor, TokenPosition),
+    Assertion(TypeDeclaration, TokenPosition),
 }
 
 #[macro_export]
@@ -323,7 +323,7 @@ impl Expression {
                 items.push(FlatUnary::Invoke(params.into_boxed_slice()));
             } else if tokens.expect_keyword(Keyword::As).is_ok() {
                 let position = tokens.peek_last().unwrap().position();
-                let target = TypeDescriptor::expect(tokens)?;
+                let target = TypeDeclaration::expect(tokens)?;
                 items.push(FlatUnary::Assertion(target, position));
             } else {
                 break;
