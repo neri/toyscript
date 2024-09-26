@@ -325,7 +325,7 @@ impl TypeDeclaration {
 
     #[inline]
     pub fn as_string(&self) -> String {
-        self.identifier().as_string()
+        self.identifier().to_string()
     }
 
     pub fn identifier(&self) -> &Identifier {

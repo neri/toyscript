@@ -7,7 +7,7 @@ pub const MAIN_NAME: &str = "main";
 
 #[derive(Debug)]
 pub struct FunctionDescriptor {
-    func_idx: FuncIndex,
+    index: FuncIndex,
     modifiers: ModifierFlag,
     signature: String,
     identifier: Identifier,
@@ -16,7 +16,6 @@ pub struct FunctionDescriptor {
 }
 
 impl FunctionDescriptor {
-    #[inline]
     pub fn parse(
         decl: &FunctionDeclaration,
         types: &TypeSystem,
@@ -63,7 +62,7 @@ impl FunctionDescriptor {
         }
 
         Ok(FunctionDescriptor {
-            func_idx,
+            index: func_idx,
             modifiers,
             identifier,
             signature,
@@ -73,8 +72,8 @@ impl FunctionDescriptor {
     }
 
     #[inline]
-    pub fn function_index(&self) -> FuncIndex {
-        self.func_idx
+    pub fn index(&self) -> FuncIndex {
+        self.index
     }
 
     #[inline]

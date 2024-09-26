@@ -50,7 +50,7 @@ impl Identifier {
     }
 
     #[inline]
-    pub fn as_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         self.str.to_string()
     }
 

@@ -216,17 +216,18 @@ impl CompileError {
         actual: &types::TypeDescriptor,
         position: TokenPosition,
     ) -> Self {
-        let explanation = format!(
-            "Type mismatch '{}', Expected '{}'",
-            actual.identifier(),
-            exptected.identifier(),
-        );
+        Self::type_mismatch2(exptected.identifier(), actual.identifier(), position)
+    }
+
+    #[inline]
+    pub fn type_mismatch2(exptected: &str, actual: &str, position: TokenPosition) -> Self {
+        let explanation = format!("Type mismatch '{}', Expected '{}'", actual, exptected,);
         Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
     }
 
     #[inline]
-    pub fn literal_overflow(exptected: &types::TypeDescriptor, position: TokenPosition) -> Self {
-        let explanation = format!("Literal out of range for '{}' ", exptected.identifier(),);
+    pub fn literal_overflow(exptected: &str, position: TokenPosition) -> Self {
+        let explanation = format!("Literal out of range for '{}' ", exptected,);
         Self::with_position(CompileErrorKind::TypeError, position, Some(explanation))
     }
 

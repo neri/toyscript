@@ -95,14 +95,19 @@ export function add(a: int, b: int): int {
 - _Currently, not yet supported_
 - _Braces cannot be omitted_
 
-### var statement (let, const)
+### var statement (let or const)
 
 ```
-('const' | 'let') identifier [':' type] ['=' expr] (',' identifier [':' type] ['=' expr])*
+'let' identifier1 [':' type1] ['=' expr1]
+(',' identifier2 [':' type2] ['=' expr2])*
+
+'const' identifier1 [':' type1] '=' expr1
+(',' identifier2 [':' type2] '=' expr2)*
 ```
 
 - Defines a variable named `identifier`, which binds the type if `type` is specified, or evaluates and assigns an expression if `expr` is specified.
 - Type inference is made only on the first assignment that defines a variable.
+- For `const`, assignment is possible only at definition time and an expression must be specified.
 
 ### while statement
 
@@ -133,4 +138,4 @@ Not yet supported
 
 ### Templates
 
-unplanned
+no plan

@@ -95,7 +95,7 @@ impl FunctionDeclaration {
             }
             FunctionSyntaxFlavor::Declare => {
                 block = Block::empty();
-                import_from = Some(("env".to_owned(), identifier.as_string()));
+                import_from = Some(("env".to_owned(), identifier.to_string()));
             }
             FunctionSyntaxFlavor::Class => {
                 // TODO:

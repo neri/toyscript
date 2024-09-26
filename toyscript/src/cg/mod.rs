@@ -44,7 +44,7 @@ impl CodeGen {
                         }
 
                         module.add_import(Import::func(
-                            FuncTempIndex::new(func_desc.function_index().as_u32()),
+                            FuncTempIndex::new(func_desc.index().as_u32()),
                             func_desc.signature(),
                             import_from.1,
                             import_from.0,
@@ -66,10 +66,13 @@ impl CodeGen {
                     }
                 }
 
+                Statement::Class(_) => {
+                    // TODO:
+                }
+
                 Statement::Block(_)
                 | Statement::Break(_)
                 | Statement::Continue(_)
-                | Statement::Class(_)
                 | Statement::IfStatement(_)
                 | Statement::ReturnStatement(_)
                 | Statement::Variable(_)
@@ -109,7 +112,7 @@ impl CodeGen {
         let return_type = func_desc.result_type().clone();
 
         let mut builder = toyir::Function::new(
-            FuncTempIndex::new(func_desc.function_index().as_u32()),
+            FuncTempIndex::new(func_desc.index().as_u32()),
             signature,
             exports,
             scope
@@ -126,7 +129,7 @@ impl CodeGen {
                 .ok_or(CompileError::could_not_infer(var.identifier()))?;
             let primitive_type = scope.types().storage_type(infered_type);
             var.set_index(builder.declare_param(
-                &var.identifier().as_string(),
+                &var.identifier().to_string(),
                 infered_type.identifier(),
                 primitive_type,
             )?);
@@ -169,7 +172,7 @@ impl CodeGen {
                 .ok_or(CompileError::could_not_infer(var_desc.identifier()))?;
             builder.declare_local(
                 var_desc.index(),
-                &var_desc.identifier().as_string(),
+                &var_desc.identifier().to_string(),
                 type_desc.identifier(),
                 types.storage_type(type_desc),
                 var_desc.is_mutable(),
@@ -593,7 +596,7 @@ impl CodeGen {
                 let target = InferredType::Inferred(
                     scope
                         .types()
-                        .get(&type_desc.identifier().as_string())
+                        .get(&type_desc.identifier().to_string())
                         .map(|v| v.clone())
                         .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
                 );
@@ -694,10 +697,7 @@ impl CodeGen {
                                 .map(|(value, inferred_to)| {
                                     (Unary::NumericLiteral(value, position), inferred_to)
                                 }),
-                            Err(err) => Err(CompileError::literal_overflow(
-                                &scope.types().primitive_type(err),
-                                position,
-                            )),
+                            Err(err) => Err(CompileError::literal_overflow(err.as_str(), position)),
                         }
                     }
 
@@ -744,6 +744,17 @@ impl CodeGen {
                     func_desc.result_type(),
                     callee.position(),
                 )?;
+
+                Ok((item.clone(), inferred_type))
+            }
+
+            Unary::New(type_decl, _args, position) => {
+                let type_desc = scope
+                    .types()
+                    .get(type_decl.identifier().as_str())
+                    .ok_or(CompileError::invalid_type(type_decl.identifier()))?;
+
+                let inferred_type = scope.types().infer_as(inferred_to, &type_desc, *position)?;
 
                 Ok((item.clone(), inferred_type))
             }
@@ -804,7 +815,7 @@ impl CodeGen {
                 let new_type = InferredType::Inferred(
                     scope
                         .types()
-                        .resolve(type_desc)
+                        .resolve(type_desc.as_ref())
                         .ok_or(CompileError::invalid_type(type_desc.identifier()))?,
                 );
 
@@ -1154,7 +1165,7 @@ impl CodeGen {
                 }
 
                 asm.ir_call(
-                    func_desc.function_index().as_usize(),
+                    func_desc.index().as_usize(),
                     func_desc.param_types().len(),
                     if func_desc.result_type().is_special_type() {
                         0
@@ -1179,6 +1190,10 @@ impl CodeGen {
             Unary::Member(_u, identifier) => {
                 // TODO:
                 return Err(CompileError::todo(None, identifier.id_position()));
+            }
+            Unary::New(_c, _p, position) => {
+                // TODO:
+                return Err(CompileError::todo(None, *position));
             }
         }
     }

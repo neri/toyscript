@@ -1,4 +1,4 @@
-# ToyScript & ToyAssembly
+# ToyScript
 
 A Lightweight toy language environment with high affinity for WebAssembly
 

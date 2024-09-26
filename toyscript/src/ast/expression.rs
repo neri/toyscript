@@ -54,7 +54,10 @@ pub enum Unary {
     Invoke(Box<Unary>, Box<[Expression]>),
 
     /// unary as a type
-    Assertion(Box<Unary>, TypeDeclaration, TokenPosition),
+    Assertion(Box<Unary>, Box<TypeDeclaration>, TokenPosition),
+
+    /// new Class
+    New(Box<TypeDeclaration>, Box<[Expression]>, TokenPosition),
 }
 
 #[derive(Debug)]
@@ -76,6 +79,8 @@ pub enum FlatUnary {
     Member(Identifier),
 
     Assertion(TypeDeclaration, TokenPosition),
+
+    New(TypeDeclaration, Box<[Expression]>, TokenPosition),
 }
 
 #[macro_export]
@@ -274,7 +279,31 @@ impl Expression {
                             token.position(),
                         )));
                     } else {
-                        return Err(CompileError::unexpected_token(&token));
+                        match keyword {
+                            Keyword::New => {
+                                let position = tokens.peek_last().unwrap().position();
+                                let target = TypeDeclaration::expect(tokens)?;
+
+                                expect_symbol(tokens, '(')?;
+                                let mut params = Vec::new();
+                                loop {
+                                    if tokens.expect_symbol(')').is_ok() {
+                                        break;
+                                    }
+
+                                    let expr = Expression::parse(tokens, ending_mode!(',', ')'))?;
+                                    params.push(expr);
+
+                                    let _ = tokens.expect_symbol(',');
+                                }
+                                items.push(FlatUnary::New(
+                                    target,
+                                    params.into_boxed_slice(),
+                                    position,
+                                ));
+                            }
+                            _ => return Err(CompileError::unexpected_token(&token)),
+                        }
                     }
                 }
                 TokenType::Eof => {
@@ -471,7 +500,15 @@ impl Expression {
                     let value = items
                         .pop()
                         .ok_or(CompileError::out_of_value_stack(position))?;
-                    items.push(Unary::Assertion(Box::new(value), type_desc, position))
+                    items.push(Unary::Assertion(
+                        Box::new(value),
+                        Box::new(type_desc),
+                        position,
+                    ))
+                }
+
+                FlatUnary::New(type_decl, params, position) => {
+                    items.push(Unary::New(Box::new(type_decl), params, position));
                 }
             }
         }
@@ -580,6 +617,7 @@ impl core::fmt::Debug for Unary {
             Self::Assertion(arg0, arg1, _) => {
                 f.debug_tuple("Assertion").field(arg0).field(arg1).finish()
             }
+            Self::New(arg0, arg1, _) => f.debug_tuple("New").field(arg0).field(arg1).finish(),
         }
     }
 }
@@ -595,7 +633,8 @@ impl Unary {
             | Unary::StringLiteral(_, position)
             | Unary::CharLiteral(_, position)
             | Unary::Binary(_, position, _, _)
-            | Unary::Assertion(_, _, position) => *position,
+            | Unary::Assertion(_, _, position)
+            | Unary::New(_, _, position) => *position,
 
             Unary::Parenthesis(expr) | Unary::Subscript(_, expr) => expr.position(),
 

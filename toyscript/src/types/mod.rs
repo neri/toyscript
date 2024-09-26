@@ -2,12 +2,14 @@
 
 use crate::*;
 use ast::{float::Float, integer::Integer, statement::Statement};
+use class::ClassDescriptor;
 use function::FunctionDescriptor;
-use index::FuncIndex;
+use index::{ClassIndex, FuncIndex};
 use string::{StringIndex, StringTable};
 use token::TokenPosition;
 use toyir::{FunctionAssembler, Primitive};
 
+pub mod class;
 pub mod function;
 pub mod index;
 pub mod string;
@@ -31,6 +33,7 @@ pub struct TypeSystem {
     name: String,
     global_objects: BTreeMap<String, GlobalObjectIndex>,
     functions: Vec<Arc<FunctionDescriptor>>,
+    classes: Vec<Arc<ClassDescriptor>>,
     types: BTreeMap<String, Arc<TypeDescriptor>>,
     string_table: StringTable,
 
@@ -49,6 +52,7 @@ impl TypeSystem {
             global_objects: BTreeMap::new(),
             types: BTreeMap::new(),
             functions: Vec::new(),
+            classes: Vec::new(),
             string_table: StringTable::new(),
 
             integer_bits: 0,
@@ -164,12 +168,37 @@ impl TypeSystem {
                     )?;
                     if system.global_object(func.identifier().as_str()).is_none() {
                         system.global_objects.insert(
-                            func.identifier().as_string().clone(),
-                            GlobalObjectIndex::Funtion(func.function_index()),
+                            func.identifier().to_string().clone(),
+                            GlobalObjectIndex::Funtion(func.index()),
                         );
                         system.functions.push(Arc::new(func));
                     } else {
                         return Err(CompileError::duplicate_identifier(func.identifier()));
+                    }
+                }
+                Statement::Class(class_decl) => {
+                    let hi_bit = 0;
+                    let class = ClassDescriptor::parse(
+                        class_decl,
+                        &system,
+                        ClassIndex(system.classes.len() as u32 | hi_bit),
+                    )?;
+                    if system.get(class.identifier().as_str()).is_some() {
+                        return Err(CompileError::duplicate_identifier(class.identifier()));
+                    } else {
+                        system.global_objects.insert(
+                            class.identifier().to_string().clone(),
+                            GlobalObjectIndex::Class(class.index()),
+                        );
+                        let class = Arc::new(class);
+                        system.classes.push(class.clone());
+                        system.types.insert(
+                            class.identifier().to_string(),
+                            Arc::new(TypeDescriptor {
+                                identifier: class.identifier().to_string(),
+                                kind: TypeKind::Class(class.clone()),
+                            }),
+                        );
                     }
                 }
                 _ => {}
@@ -314,6 +343,7 @@ impl TypeSystem {
                 TypeKind::Alias(arc) => target = arc,
                 TypeKind::Reference(_) => return self.type_usize,
                 TypeKind::Optional(_) => return self.type_usize,
+                TypeKind::Class(_) => return self.type_usize,
             }
         }
     }
@@ -443,13 +473,16 @@ impl TypeSystem {
                     match value.try_convert_to(primitive) {
                         Ok(v) => return Ok((v, InferredType::Inferred(inferred_to.clone()))),
                         Err(_) => {
-                            return Err(CompileError::literal_overflow(&inferred_to, position))
+                            return Err(CompileError::literal_overflow(
+                                inferred_to.identifier(),
+                                position,
+                            ))
                         }
                     }
                 }
-                Err(CompileError::type_mismatch(
-                    &inferred_to,
-                    &self.primitive_type(value.primitive_type()),
+                Err(CompileError::type_mismatch2(
+                    &inferred_to.identifier(),
+                    value.primitive_type().as_str(),
                     position,
                 ))
             }
@@ -458,7 +491,10 @@ impl TypeSystem {
                     match value.try_convert_to(primitive) {
                         Ok(v) => return Ok((v, InferredType::Maybe(inferred_to.clone()))),
                         Err(_) => {
-                            return Err(CompileError::literal_overflow(&inferred_to, position))
+                            return Err(CompileError::literal_overflow(
+                                inferred_to.identifier(),
+                                position,
+                            ))
                         }
                     }
                 }
@@ -482,13 +518,16 @@ impl TypeSystem {
                     match value.try_convert_to(primitive) {
                         Ok(v) => return Ok((v, InferredType::Inferred(inferred_to.clone()))),
                         Err(_) => {
-                            return Err(CompileError::literal_overflow(&inferred_to, position))
+                            return Err(CompileError::literal_overflow(
+                                inferred_to.identifier(),
+                                position,
+                            ))
                         }
                     }
                 }
-                Err(CompileError::type_mismatch(
-                    &inferred_to,
-                    &self.primitive_type(value.primitive_type()),
+                Err(CompileError::type_mismatch2(
+                    &inferred_to.identifier(),
+                    value.primitive_type().as_str(),
                     position,
                 ))
             }
@@ -497,7 +536,10 @@ impl TypeSystem {
                     match value.try_convert_to(primitive) {
                         Ok(v) => return Ok((v, InferredType::Maybe(inferred_to.clone()))),
                         Err(_) => {
-                            return Err(CompileError::literal_overflow(&inferred_to, position))
+                            return Err(CompileError::literal_overflow(
+                                inferred_to.identifier(),
+                                position,
+                            ))
                         }
                     }
                 }
@@ -563,12 +605,26 @@ impl TypeSystem {
     }
 
     pub fn function(&self, identifier: &str) -> Option<&Arc<FunctionDescriptor>> {
-        let funcidx = match self.global_object(identifier)? {
+        let index = match self.global_object(identifier)? {
             GlobalObjectIndex::Funtion(v) => v,
+            _ => return None,
         };
         for func in &self.functions {
-            if func.function_index() == funcidx {
+            if func.index() == index {
                 return Some(func);
+            }
+        }
+        None
+    }
+
+    pub fn class(&self, identifier: &str) -> Option<&Arc<ClassDescriptor>> {
+        let index = match self.global_object(identifier)? {
+            GlobalObjectIndex::Class(v) => v,
+            _ => return None,
+        };
+        for class in &self.classes {
+            if class.index() == index {
+                return Some(class);
             }
         }
         None
@@ -625,6 +681,7 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
             TypeKind::Alias(alias) => self.resolve(alias),
             TypeKind::Reference(_) => None,
             TypeKind::Optional(_) => None,
+            TypeKind::Class(_) => None,
         }
     }
 
@@ -634,6 +691,7 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
             TypeKind::Alias(alias) => self.resolve_primitive(alias),
             TypeKind::Reference(_) => None,
             TypeKind::Optional(_) => None,
+            TypeKind::Class(_) => None,
         }
     }
 }
@@ -763,7 +821,7 @@ pub enum TypeKind {
     Alias(Arc<TypeDescriptor>),
     Reference(Arc<TypeDescriptor>),
     Optional(Arc<TypeDescriptor>),
-    //Class(T),
+    Class(Arc<ClassDescriptor>),
     //Function(T),
 }
 
@@ -776,6 +834,7 @@ impl core::fmt::Debug for TypeKind {
                 .debug_tuple("Reference")
                 .field(&arg0.identifier())
                 .finish(),
+            Self::Class(arg0) => f.debug_tuple("Class").field(&arg0.identifier()).finish(),
             Self::Optional(arg0) => f.debug_tuple("Optional").field(&arg0.identifier()).finish(),
         }
     }
@@ -819,4 +878,5 @@ impl InferredType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum GlobalObjectIndex {
     Funtion(FuncIndex),
+    Class(ClassIndex),
 }

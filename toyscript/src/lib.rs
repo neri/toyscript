@@ -73,6 +73,17 @@ impl ToyScript {
             .map(|v| format!("{:#?}", v))
     }
 
+    pub fn explain_types(file_name: &str, src: Vec<u8>) -> Result<String, String> {
+        Self::_from_src(file_name, src, |tokens| {
+            let ast = Ast::from_tokens(tokens)?;
+
+            let types = TypeSystem::new(file_name, &ast)?;
+
+            Ok(types)
+        })
+        .map(|v| format!("{:#?}", v))
+    }
+
     pub fn explain_toyir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
