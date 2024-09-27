@@ -23,7 +23,7 @@ impl CodeGen {
     pub fn generate(ast: &Ast, types: &TypeSystem) -> Result<toyir::Module, CompileError> {
         let mut module = toyir::Module::new(types.name());
 
-        for statement in ast.program() {
+        for statement in ast.module() {
             match statement {
                 Statement::Eof(_) | Statement::TypeAlias(_, _) => {}
 
@@ -615,16 +615,16 @@ impl CodeGen {
 
             Unary::Binary(op, position, ref lhs, ref rhs) => match op {
                 BinaryOperator::Assign
-                | BinaryOperator::AssignAdd
-                | BinaryOperator::AssignSub
-                | BinaryOperator::AssignMul
-                | BinaryOperator::AssignDiv
-                | BinaryOperator::AssignRem
-                | BinaryOperator::AssignBitAnd
-                | BinaryOperator::AssignBitOr
-                | BinaryOperator::AssignBitXor
-                | BinaryOperator::AssignShl
-                | BinaryOperator::AssignShr
+                | BinaryOperator::AddAssign
+                | BinaryOperator::SubAssign
+                | BinaryOperator::MulAssign
+                | BinaryOperator::DivAssign
+                | BinaryOperator::RemAssign
+                | BinaryOperator::BitAndAssign
+                | BinaryOperator::BitOrAssign
+                | BinaryOperator::BitXorAssign
+                | BinaryOperator::ShlAssign
+                | BinaryOperator::ShrAssign
                 | BinaryOperator::Add
                 | BinaryOperator::Sub
                 | BinaryOperator::Mul
@@ -752,7 +752,7 @@ impl CodeGen {
                 let type_desc = scope
                     .types()
                     .get(type_decl.identifier().as_str())
-                    .ok_or(CompileError::invalid_type(type_decl.identifier()))?;
+                    .ok_or(CompileError::identifier_not_found(type_decl.identifier()))?;
 
                 let inferred_type = scope.types().infer_as(inferred_to, &type_desc, *position)?;
 
@@ -977,16 +977,16 @@ impl CodeGen {
                 }
 
                 BinaryOperator::Assign
-                | BinaryOperator::AssignAdd
-                | BinaryOperator::AssignSub
-                | BinaryOperator::AssignMul
-                | BinaryOperator::AssignDiv
-                | BinaryOperator::AssignRem
-                | BinaryOperator::AssignBitAnd
-                | BinaryOperator::AssignBitOr
-                | BinaryOperator::AssignBitXor
-                | BinaryOperator::AssignShl
-                | BinaryOperator::AssignShr => {
+                | BinaryOperator::AddAssign
+                | BinaryOperator::SubAssign
+                | BinaryOperator::MulAssign
+                | BinaryOperator::DivAssign
+                | BinaryOperator::RemAssign
+                | BinaryOperator::BitAndAssign
+                | BinaryOperator::BitOrAssign
+                | BinaryOperator::BitXorAssign
+                | BinaryOperator::ShlAssign
+                | BinaryOperator::ShrAssign => {
                     let identifier = match **lhs {
                         Unary::Identifier(ref v) => Ok(v),
                         _ => Err(CompileError::lvalue_required(lhs.position())),

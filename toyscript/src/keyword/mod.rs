@@ -10,7 +10,6 @@ impl Keyword {
             Keyword::Async,
             Keyword::Export,
             Keyword::Get,
-            Keyword::Import,
             Keyword::Private,
             Keyword::Protected,
             Keyword::Public,
@@ -63,11 +62,7 @@ impl ModifierFlag {
     #[rustfmt::skip]
     pub const ASYNC: Self       = Self(0b0000_0001);
     #[rustfmt::skip]
-    pub const DECLARE: Self     = Self(0b0000_0010);
-    #[rustfmt::skip]
     pub const EXPORT: Self      = Self(0b0000_0100);
-    #[rustfmt::skip]
-    pub const IMPORT: Self      = Self(0b0000_1000);
     #[rustfmt::skip]
     pub const PRIVATE: Self     = Self(0b0001_0000);
     #[rustfmt::skip]
@@ -79,9 +74,7 @@ impl ModifierFlag {
 
     const ALL_CAES: &'static [Self] = &[
         Self::ASYNC,
-        Self::DECLARE,
         Self::EXPORT,
-        Self::IMPORT,
         Self::PRIVATE,
         Self::PROTECTED,
         Self::PUBLIC,
@@ -100,12 +93,8 @@ impl ModifierFlag {
         self.iter().map(move |v| {
             if v.contains(Self::ASYNC) {
                 "async"
-            } else if v.contains(Self::DECLARE) {
-                "declare"
             } else if v.contains(Self::EXPORT) {
                 "export"
-            } else if v.contains(Self::IMPORT) {
-                "import"
             } else if v.contains(Self::PRIVATE) {
                 "private"
             } else if v.contains(Self::PROTECTED) {
@@ -136,12 +125,10 @@ impl ModifierFlag {
             let new_value = match keyword.keyword() {
                 Keyword::Async => Self::ASYNC,
                 Keyword::Export => Self::EXPORT,
-                Keyword::Import => Self::IMPORT,
                 Keyword::Public => Self::PUBLIC,
                 Keyword::Private => Self::PRIVATE,
                 Keyword::Protected => Self::PROTECTED,
                 Keyword::Static => Self::STATIC,
-                Keyword::Declare => Self::DECLARE,
                 _ => return Err(token.clone()),
             };
             if (new_value.0 & accept.0) != new_value.0 {
@@ -159,12 +146,10 @@ impl ModifierFlag {
             match keyword {
                 Keyword::Async => result.insert(Self::ASYNC),
                 Keyword::Export => result.insert(Self::EXPORT),
-                Keyword::Import => result.insert(Self::IMPORT),
                 Keyword::Public => result.insert(Self::PUBLIC),
                 Keyword::Private => result.insert(Self::PRIVATE),
                 Keyword::Protected => result.insert(Self::PROTECTED),
                 Keyword::Static => result.insert(Self::STATIC),
-                Keyword::Declare => result.insert(Self::DECLARE),
                 _ => return Err(keyword),
             }
         }

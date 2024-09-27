@@ -12,14 +12,14 @@ fn function_minimal() {
     let mut tokens = tokens.stream();
     let ast = Ast::from_tokens(&mut tokens).unwrap();
 
-    let func_decl = &ast.program()[0];
+    let func_decl = &ast.module()[0];
     let Statement::Function(function) = func_decl else {
         panic!("Expected FunctionDeclaration, But {:?}", func_decl);
     };
     assert_eq!(function.identifier().as_str(), "min1");
     assert_eq!(function.parameters(), &[]);
 
-    let func_decl = &ast.program()[1];
+    let func_decl = &ast.module()[1];
     let Statement::Function(function) = func_decl else {
         panic!("Expected FunctionDeclaration, But {:?}", func_decl);
     };

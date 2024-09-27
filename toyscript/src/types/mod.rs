@@ -96,7 +96,7 @@ impl TypeSystem {
 
         let mut will_waiting_ids = Vec::new();
         let mut waiting_type_list = Vec::new();
-        for statement in ast.program() {
+        for statement in ast.module() {
             match statement {
                 Statement::TypeAlias(identifier, type_desc) => {
                     will_waiting_ids.push(identifier.to_string());
@@ -157,25 +157,8 @@ impl TypeSystem {
             ));
         }
 
-        for statement in ast.program() {
+        for statement in ast.module() {
             match statement {
-                Statement::Function(func_decl) => {
-                    let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
-                    let func = FunctionDescriptor::parse(
-                        func_decl,
-                        &system,
-                        FuncIndex(system.functions.len() as u32 | hi_bit),
-                    )?;
-                    if system.global_object(func.identifier().as_str()).is_none() {
-                        system.global_objects.insert(
-                            func.identifier().to_string().clone(),
-                            GlobalObjectIndex::Funtion(func.index()),
-                        );
-                        system.functions.push(Arc::new(func));
-                    } else {
-                        return Err(CompileError::duplicate_identifier(func.identifier()));
-                    }
-                }
                 Statement::Class(class_decl) => {
                     let hi_bit = 0;
                     let class = ClassDescriptor::parse(
@@ -205,7 +188,47 @@ impl TypeSystem {
             }
         }
 
+        // {
+        //     let func_idx = FuncIndex(0);
+        //     let func = FunctionDescriptor::intrinsic(
+        //         func_idx,
+        //         ModifierFlag::empty(),
+        //         Identifier::new("unreachable"),
+        //         Vec::new(),
+        //         system.builtin_never(),
+        //     );
+        //     system.add_function(func)?;
+        // }
+
+        for statement in ast.module() {
+            match statement {
+                Statement::Function(func_decl) => {
+                    let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
+                    let func = FunctionDescriptor::parse(
+                        func_decl,
+                        &system,
+                        FuncIndex(system.functions.len() as u32 | hi_bit),
+                    )?;
+                    system.add_function(func)?;
+                }
+                _ => {}
+            }
+        }
+
         Ok(system)
+    }
+
+    pub fn add_function(&mut self, func: FunctionDescriptor) -> Result<(), CompileError> {
+        if self.global_object(func.identifier().as_str()).is_none() {
+            self.global_objects.insert(
+                func.identifier().to_string().clone(),
+                GlobalObjectIndex::Funtion(func.index()),
+            );
+            self.functions.push(Arc::new(func));
+        } else {
+            return Err(CompileError::duplicate_identifier(func.identifier()));
+        }
+        Ok(())
     }
 
     #[inline]

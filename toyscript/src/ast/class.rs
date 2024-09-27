@@ -223,41 +223,37 @@ impl EnumDeclaration {
 
         let mut variants = Vec::new();
 
-        if modifiers.contains(ModifierFlag::IMPORT) {
-            expect_symbol(tokens, ';')?;
-        } else {
-            expect_symbol(tokens, '{')?;
-            loop {
-                let token = tokens.next_non_blank();
-                match token.token_type() {
-                    TokenType::Symbol('}') => break,
-                    TokenType::Identifier => {
-                        let identifier = Identifier::from_token(&token);
+        expect_symbol(tokens, '{')?;
+        loop {
+            let token = tokens.next_non_blank();
+            match token.token_type() {
+                TokenType::Symbol('}') => break,
+                TokenType::Identifier => {
+                    let identifier = Identifier::from_token(&token);
 
-                        let assignment = if tokens.expect_symbol('=').is_ok() {
-                            Some(Expression::parse(tokens, ending_mode!(','))?)
-                        } else {
-                            None
-                        };
-                        variants.push((identifier, assignment));
+                    let assignment = if tokens.expect_symbol('=').is_ok() {
+                        Some(Expression::parse(tokens, ending_mode!(','))?)
+                    } else {
+                        None
+                    };
+                    variants.push((identifier, assignment));
 
-                        if tokens.expect_symbol('}').is_ok() {
-                            break;
-                        }
-                        expect_symbol(tokens, ',')?;
+                    if tokens.expect_symbol('}').is_ok() {
+                        break;
                     }
-
-                    _ => {
-                        return Err(CompileError::missing_token(
-                            &token,
-                            &[TokenType::Symbol('}'), TokenType::Identifier],
-                        ))
-                    }
+                    expect_symbol(tokens, ',')?;
                 }
-                //
+
+                _ => {
+                    return Err(CompileError::missing_token(
+                        &token,
+                        &[TokenType::Symbol('}'), TokenType::Identifier],
+                    ))
+                }
             }
-            expect_eol(tokens)?;
+            //
         }
+        expect_eol(tokens)?;
 
         Ok(Self {
             decorations,

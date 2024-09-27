@@ -446,7 +446,7 @@ impl Expression {
             rpn_items.push(item);
         }
 
-        // conver to ast
+        // convert to ast
         let mut items = Vec::new();
 
         for item in rpn_items {
@@ -769,25 +769,25 @@ pub enum BinaryOperator {
     /// A `=` B
     Assign,
     /// A `+=` B
-    AssignAdd,
+    AddAssign,
     /// A `-=` B
-    AssignSub,
+    SubAssign,
     /// A `*=` B
-    AssignMul,
+    MulAssign,
     /// A `/=` B
-    AssignDiv,
+    DivAssign,
     /// A `%=` B
-    AssignRem,
+    RemAssign,
     /// A `&=` B
-    AssignBitAnd,
+    BitAndAssign,
     /// A `|=` B
-    AssignBitOr,
+    BitOrAssign,
     /// A `^=` B
-    AssignBitXor,
+    BitXorAssign,
     /// A `<<=` B
-    AssignShl,
+    ShlAssign,
     /// A `>>=` B
-    AssignShr,
+    ShrAssign,
 
     /// A `&&` B
     LogicalAnd,
@@ -847,21 +847,21 @@ impl BinaryOperator {
             TokenType::Symbol(symbol) => match symbol {
                 '+' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignAdd);
+                        return Ok(BinaryOperator::AddAssign);
                     } else if tokens.expect_immed_symbol('+').is_err() {
                         return Ok(BinaryOperator::Add);
                     }
                 }
                 '-' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignSub);
+                        return Ok(BinaryOperator::SubAssign);
                     } else if tokens.expect_immed_symbol('-').is_err() {
                         return Ok(BinaryOperator::Sub);
                     }
                 }
                 '*' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignMul);
+                        return Ok(BinaryOperator::MulAssign);
                     } else if tokens.expect_immed_symbol('*').is_ok() {
                         return Ok(BinaryOperator::Exponentiation);
                     } else {
@@ -870,14 +870,14 @@ impl BinaryOperator {
                 }
                 '/' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignDiv);
+                        return Ok(BinaryOperator::DivAssign);
                     } else {
                         return Ok(BinaryOperator::Div);
                     }
                 }
                 '%' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignRem);
+                        return Ok(BinaryOperator::RemAssign);
                     } else {
                         return Ok(BinaryOperator::Rem);
                     }
@@ -907,7 +907,7 @@ impl BinaryOperator {
                         return Ok(BinaryOperator::Le);
                     } else if tokens.expect_immed_symbol('<').is_ok() {
                         if tokens.expect_immed_symbol('=').is_ok() {
-                            return Ok(BinaryOperator::AssignShl);
+                            return Ok(BinaryOperator::ShlAssign);
                         } else {
                             return Ok(BinaryOperator::Shl);
                         }
@@ -920,7 +920,7 @@ impl BinaryOperator {
                         return Ok(BinaryOperator::Ge);
                     } else if tokens.expect_immed_symbol('>').is_ok() {
                         if tokens.expect_immed_symbol('=').is_ok() {
-                            return Ok(BinaryOperator::AssignShr);
+                            return Ok(BinaryOperator::ShrAssign);
                         } else {
                             return Ok(BinaryOperator::Shr);
                         }
@@ -931,7 +931,7 @@ impl BinaryOperator {
 
                 '&' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignBitAnd);
+                        return Ok(BinaryOperator::BitAndAssign);
                     } else if tokens.expect_immed_symbol('&').is_ok() {
                         return Ok(BinaryOperator::LogicalAnd);
                     } else {
@@ -940,7 +940,7 @@ impl BinaryOperator {
                 }
                 '|' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignBitOr);
+                        return Ok(BinaryOperator::BitOrAssign);
                     } else if tokens.expect_immed_symbol('|').is_ok() {
                         return Ok(BinaryOperator::LogicalOr);
                     } else {
@@ -949,7 +949,7 @@ impl BinaryOperator {
                 }
                 '^' => {
                     if tokens.expect_immed_symbol('=').is_ok() {
-                        return Ok(BinaryOperator::AssignBitXor);
+                        return Ok(BinaryOperator::BitXorAssign);
                     } else {
                         return Ok(BinaryOperator::BitXor);
                     }
@@ -966,16 +966,16 @@ impl BinaryOperator {
     pub fn assign_operator(&self) -> Option<BinaryOperator> {
         match self {
             BinaryOperator::Assign => Some(BinaryOperator::Assign),
-            BinaryOperator::AssignAdd => Some(BinaryOperator::Add),
-            BinaryOperator::AssignSub => Some(BinaryOperator::Sub),
-            BinaryOperator::AssignMul => Some(BinaryOperator::Mul),
-            BinaryOperator::AssignDiv => Some(BinaryOperator::Div),
-            BinaryOperator::AssignRem => Some(BinaryOperator::Rem),
-            BinaryOperator::AssignBitAnd => Some(BinaryOperator::BitAnd),
-            BinaryOperator::AssignBitOr => Some(BinaryOperator::BitOr),
-            BinaryOperator::AssignBitXor => Some(BinaryOperator::BitXor),
-            BinaryOperator::AssignShl => Some(BinaryOperator::Shl),
-            BinaryOperator::AssignShr => Some(BinaryOperator::Shr),
+            BinaryOperator::AddAssign => Some(BinaryOperator::Add),
+            BinaryOperator::SubAssign => Some(BinaryOperator::Sub),
+            BinaryOperator::MulAssign => Some(BinaryOperator::Mul),
+            BinaryOperator::DivAssign => Some(BinaryOperator::Div),
+            BinaryOperator::RemAssign => Some(BinaryOperator::Rem),
+            BinaryOperator::BitAndAssign => Some(BinaryOperator::BitAnd),
+            BinaryOperator::BitOrAssign => Some(BinaryOperator::BitOr),
+            BinaryOperator::BitXorAssign => Some(BinaryOperator::BitXor),
+            BinaryOperator::ShlAssign => Some(BinaryOperator::Shl),
+            BinaryOperator::ShrAssign => Some(BinaryOperator::Shr),
             _ => None,
         }
     }
@@ -983,16 +983,16 @@ impl BinaryOperator {
     pub fn priority(&self) -> OperatorPriority {
         match self {
             BinaryOperator::Assign
-            | BinaryOperator::AssignAdd
-            | BinaryOperator::AssignSub
-            | BinaryOperator::AssignMul
-            | BinaryOperator::AssignDiv
-            | BinaryOperator::AssignRem
-            | BinaryOperator::AssignBitAnd
-            | BinaryOperator::AssignBitOr
-            | BinaryOperator::AssignBitXor
-            | BinaryOperator::AssignShl
-            | BinaryOperator::AssignShr => OperatorPriority::Assignment,
+            | BinaryOperator::AddAssign
+            | BinaryOperator::SubAssign
+            | BinaryOperator::MulAssign
+            | BinaryOperator::DivAssign
+            | BinaryOperator::RemAssign
+            | BinaryOperator::BitAndAssign
+            | BinaryOperator::BitOrAssign
+            | BinaryOperator::BitXorAssign
+            | BinaryOperator::ShlAssign
+            | BinaryOperator::ShrAssign => OperatorPriority::Assignment,
 
             BinaryOperator::LogicalAnd => OperatorPriority::LogicalAnd,
 
@@ -1029,16 +1029,16 @@ impl BinaryOperator {
         matches!(
             self,
             BinaryOperator::Assign
-                | BinaryOperator::AssignAdd
-                | BinaryOperator::AssignSub
-                | BinaryOperator::AssignMul
-                | BinaryOperator::AssignDiv
-                | BinaryOperator::AssignRem
-                | BinaryOperator::AssignBitAnd
-                | BinaryOperator::AssignBitOr
-                | BinaryOperator::AssignBitXor
-                | BinaryOperator::AssignShl
-                | BinaryOperator::AssignShr
+                | BinaryOperator::AddAssign
+                | BinaryOperator::SubAssign
+                | BinaryOperator::MulAssign
+                | BinaryOperator::DivAssign
+                | BinaryOperator::RemAssign
+                | BinaryOperator::BitAndAssign
+                | BinaryOperator::BitOrAssign
+                | BinaryOperator::BitXorAssign
+                | BinaryOperator::ShlAssign
+                | BinaryOperator::ShrAssign
                 | BinaryOperator::Exponentiation
         )
     }
@@ -1067,16 +1067,16 @@ impl BinaryOperator {
             Self::Shr => (Op::ShrS, Op::ShrU),
 
             Self::Assign
-            | Self::AssignAdd
-            | Self::AssignSub
-            | Self::AssignMul
-            | Self::AssignDiv
-            | Self::AssignRem
-            | Self::AssignBitAnd
-            | Self::AssignBitOr
-            | Self::AssignBitXor
-            | Self::AssignShl
-            | Self::AssignShr
+            | Self::AddAssign
+            | Self::SubAssign
+            | Self::MulAssign
+            | Self::DivAssign
+            | Self::RemAssign
+            | Self::BitAndAssign
+            | Self::BitOrAssign
+            | Self::BitXorAssign
+            | Self::ShlAssign
+            | Self::ShrAssign
             | Self::LogicalAnd
             | Self::LogicalOr
             | Self::Exponentiation => unreachable!(),

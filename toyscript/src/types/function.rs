@@ -72,6 +72,29 @@ impl FunctionDescriptor {
     }
 
     #[inline]
+    pub fn intrinsic(
+        index: FuncIndex,
+        modifiers: ModifierFlag,
+        identifier: Identifier,
+        param_types: Vec<Arc<TypeDescriptor>>,
+        result_type: Arc<TypeDescriptor>,
+    ) -> Self {
+        let signature = TypeSystem::mangled(
+            identifier.as_str(),
+            param_types.iter().map(|v| v.as_ref()),
+            &result_type,
+        );
+        Self {
+            index,
+            modifiers,
+            signature,
+            identifier,
+            param_types: param_types.into_boxed_slice(),
+            result_type,
+        }
+    }
+
+    #[inline]
     pub fn index(&self) -> FuncIndex {
         self.index
     }

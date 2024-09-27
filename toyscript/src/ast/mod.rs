@@ -24,7 +24,7 @@ pub struct Ast {
 
 impl Ast {
     #[inline]
-    pub fn program(&self) -> &[Statement] {
+    pub fn module(&self) -> &[Statement] {
         &self.items
     }
 
@@ -44,6 +44,6 @@ impl Ast {
 
 impl core::fmt::Debug for Ast {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Program: {:#?}", self.items)
+        write!(f, "Module: {:#?}", self.items)
     }
 }
