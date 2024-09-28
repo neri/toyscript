@@ -3,28 +3,28 @@ use core::cmp;
 use token::{TokenError, TokenPosition};
 use toyir::error::AssembleError;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompileError {
     kind: CompileErrorKind,
     explanation: Option<String>,
     position: ErrorPosition,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ErrorPosition {
     CharAt(usize, usize),
     Range(TokenPosition),
     Unspecified,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CompileErrorKind {
     TokenParseError(TokenError),
 
     SyntaxError,
     InvalidLiteral,
     DuplicateIdentifier,
-    IdentifierNotFound,
+    IdentifierNotFound(Identifier),
     TypeError,
     InvalidType,
 
@@ -191,7 +191,7 @@ impl CompileError {
             identifier
         );
         Self::with_position(
-            CompileErrorKind::IdentifierNotFound,
+            CompileErrorKind::IdentifierNotFound(identifier.clone()),
             identifier.id_position(),
             Some(explanation),
         )
@@ -204,7 +204,7 @@ impl CompileError {
             identifier.as_str()
         );
         Self::with_position(
-            CompileErrorKind::IdentifierNotFound,
+            CompileErrorKind::IdentifierNotFound(identifier.clone()),
             identifier.id_position(),
             Some(explanation),
         )

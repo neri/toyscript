@@ -176,7 +176,7 @@ impl FunctionDeclaration {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     identifier: Identifier,
     type_decl: TypeDeclaration,

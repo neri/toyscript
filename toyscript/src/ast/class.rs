@@ -18,8 +18,8 @@ pub struct ClassDeclaration {
     identifier: Identifier,
     type_params: Vec<TypeParameter>,
     super_class: Option<Identifier>,
-    variables: Box<[VariableDeclaration]>,
-    functions: Box<[FunctionDeclaration]>,
+    var_decls: Vec<VariableDeclaration>,
+    functions: Vec<Arc<FunctionDeclaration>>,
     position: TokenPosition,
 }
 
@@ -50,7 +50,7 @@ impl ClassDeclaration {
         };
 
         expect_symbol(tokens, '{')?;
-        let mut variables = Vec::new();
+        let mut var_decls = Vec::new();
         let mut functions = Vec::new();
 
         {
@@ -80,7 +80,7 @@ impl ClassDeclaration {
                                     Some(&token),
                                     tokens,
                                 )?;
-                                functions.push(member);
+                                functions.push(Arc::new(member));
                             }
                             _ => return Err(CompileError::unexpected_token(&token)),
                         }
@@ -111,7 +111,7 @@ impl ClassDeclaration {
                                     tokens,
                                     None,
                                 )?;
-                                variables.push(member);
+                                var_decls.push(member);
                             }
                             MemberKind::Function => {
                                 let member = FunctionDeclaration::parse(
@@ -122,7 +122,7 @@ impl ClassDeclaration {
                                     Some(&token),
                                     tokens,
                                 )?;
-                                functions.push(member);
+                                functions.push(Arc::new(member));
                             }
                             MemberKind::Err(err) => return Err(err),
                         }
@@ -143,8 +143,8 @@ impl ClassDeclaration {
             identifier,
             type_params,
             super_class,
-            variables: variables.into_boxed_slice(),
-            functions: functions.into_boxed_slice(),
+            var_decls,
+            functions,
             position,
         })
     }
@@ -175,18 +175,33 @@ impl ClassDeclaration {
     }
 
     #[inline]
-    pub fn variables(&self) -> &[VariableDeclaration] {
-        &self.variables
+    pub fn var_decls(&self) -> &[VariableDeclaration] {
+        &self.var_decls
     }
 
     #[inline]
-    pub fn functions(&self) -> &[FunctionDeclaration] {
+    pub fn functions(&self) -> &[Arc<FunctionDeclaration>] {
         &self.functions
     }
 
     #[inline]
     pub fn position(&self) -> TokenPosition {
         self.position
+    }
+}
+
+impl Clone for ClassDeclaration {
+    fn clone(&self) -> Self {
+        Self {
+            decorators: self.decorators.clone(),
+            modifiers: self.modifiers.clone(),
+            identifier: self.identifier.clone(),
+            type_params: self.type_params.clone(),
+            super_class: self.super_class.clone(),
+            var_decls: self.var_decls.clone(),
+            functions: self.functions.clone(),
+            position: self.position.clone(),
+        }
     }
 }
 
@@ -284,57 +299,68 @@ impl EnumDeclaration {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeDeclaration {
     Simple(Identifier),
+    Optional(Identifier),
 }
 
 impl TypeDeclaration {
     pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, CompileError> {
         let token = tokens.next_non_blank();
-        match token.token_type() {
-            TokenType::Identifier => Identifier::parse(token, tokens).map(|v| Self::Simple(v)),
+        let first_elem = match token.token_type() {
+            TokenType::Identifier => Identifier::parse(token, tokens).map(|v| v)?,
             TokenType::Keyword(keyword) => {
                 if keyword.is_type_identifier() {
-                    Ok(Self::Simple(Identifier::from_token(&token)))
+                    Identifier::from_token(&token)
                 } else {
-                    Err(CompileError::with_token(
+                    return Err(CompileError::with_token(
                         CompileErrorKind::SyntaxError,
                         &token,
                         Some("Expected Type".to_string()),
-                    ))
+                    ));
                 }
             }
-            _ => Err(CompileError::with_token(
-                CompileErrorKind::SyntaxError,
-                &token,
-                Some("Expected Type".to_string()),
-            )),
+            _ => {
+                return Err(CompileError::with_token(
+                    CompileErrorKind::SyntaxError,
+                    &token,
+                    Some("Expected Type".to_string()),
+                ))
+            }
+        };
+
+        if tokens.expect_symbol('?').is_ok() {
+            return Ok(Self::Optional(first_elem));
         }
+
+        if tokens.expect_symbol('|').is_ok() {
+            expect(tokens, &[TokenType::Keyword(Keyword::Undefined)])?;
+            return Ok(Self::Optional(first_elem));
+        }
+
+        Ok(Self::Simple(first_elem))
     }
 
     pub fn position(&self) -> TokenPosition {
         match self {
             Self::Simple(v) => v.id_position(),
+            Self::Optional(v) => v.id_position(),
         }
     }
 
     #[inline]
-    pub fn as_string(&self) -> String {
-        self.identifier().to_string()
+    pub fn to_string(&self) -> String {
+        match self {
+            TypeDeclaration::Simple(v) => v.to_string(),
+            TypeDeclaration::Optional(v) => format!("{}?", v.to_string()),
+        }
     }
 
     pub fn identifier(&self) -> &Identifier {
         match self {
             TypeDeclaration::Simple(v) => v,
-        }
-    }
-}
-
-impl Clone for TypeDeclaration {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Simple(arg0) => Self::Simple(arg0.clone()),
+            TypeDeclaration::Optional(v) => v,
         }
     }
 }

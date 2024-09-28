@@ -106,8 +106,8 @@ impl CodeGen {
         let mut scope = var_storage.root_scope();
 
         let signature = func_desc.signature();
-        let exports = (func_desc.modifiers().contains(ModifierFlag::EXPORT))
-            .then(|| func_desc.identifier().as_str());
+        let exports =
+            (func_desc.modifiers().contains(ModifierFlag::EXPORT)).then(|| func_desc.identifier());
 
         let return_type = func_desc.result_type().clone();
 
@@ -209,7 +209,7 @@ impl CodeGen {
                     })?,
                 None => None,
             };
-            let mut var_desc = VariableDescriptor::from_var_decl(var_decl, type_desc);
+            let mut var_desc = VariableDescriptor::from_var_decl(var_decl, type_desc.as_ref());
             var_desc.set_index(asm.alloc_local());
             let localidx = var_desc.index();
 

@@ -7,14 +7,13 @@ use crate::*;
 use ast::class::TypeDeclaration;
 use token::{Token, TokenPosition, TokenStream};
 
-#[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VariableDeclaration {
     modifiers: Box<[Keyword]>,
     variables: Box<[Variable]>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Variable {
     identifier: Identifier,
     type_decl: Option<TypeDeclaration>,
@@ -159,6 +158,11 @@ impl VariableDeclaration {
             modifiers: modifiers.into_boxed_slice(),
             variables: variables.into_boxed_slice(),
         })
+    }
+
+    #[inline]
+    pub fn modifiers(&self) -> &[Keyword] {
+        &self.modifiers
     }
 
     #[inline]

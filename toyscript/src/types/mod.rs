@@ -31,10 +31,10 @@ pub const BUILTIN_VOID: &str = "void";
 #[derive(Debug)]
 pub struct TypeSystem {
     name: String,
-    global_objects: BTreeMap<String, GlobalObjectIndex>,
-    functions: Vec<Arc<FunctionDescriptor>>,
+    global_names: BTreeMap<String, GlobalNameIndex>,
     classes: Vec<Arc<ClassDescriptor>>,
-    types: BTreeMap<String, Arc<TypeDescriptor>>,
+    functions: Vec<Arc<FunctionDescriptor>>,
+    types: RefCell<BTreeMap<String, Arc<TypeDescriptor>>>,
     string_table: StringTable,
 
     integer_bits: usize,
@@ -49,8 +49,8 @@ impl TypeSystem {
     pub fn new(name: &str, ast: &ast::Ast) -> Result<Self, CompileError> {
         let mut system = Self {
             name: name.to_owned(),
-            global_objects: BTreeMap::new(),
-            types: BTreeMap::new(),
+            global_names: BTreeMap::new(),
+            types: RefCell::new(BTreeMap::new()),
             functions: Vec::new(),
             classes: Vec::new(),
             string_table: StringTable::new(),
@@ -68,7 +68,10 @@ impl TypeSystem {
             //     continue;
             // }
             let desc = TypeDescriptor::from_primitive(*primitive);
-            system.types.insert(desc.identifier().to_string(), desc);
+            system
+                .types
+                .borrow_mut()
+                .insert(desc.identifier().to_string(), desc);
         }
 
         system.set_use(32).unwrap();
@@ -94,97 +97,137 @@ impl TypeSystem {
 
         system.make_reference(&Identifier::new(BUILTIN_STRING), &system.builtin_void())?;
 
-        let mut will_waiting_ids = Vec::new();
-        let mut waiting_type_list = Vec::new();
-        for statement in ast.module() {
-            match statement {
-                Statement::TypeAlias(identifier, type_desc) => {
-                    will_waiting_ids.push(identifier.to_string());
+        {
+            let mut will_waiting_ids = Vec::new();
+            let mut waiting_type_list = Vec::new();
+            let mut waiting_class_list = Vec::new();
+            let mut last_class_errors = Vec::new();
+
+            for statement in ast.module() {
+                match statement {
+                    Statement::TypeAlias(identifier, type_desc) => {
+                        will_waiting_ids.push(identifier.to_string());
+
+                        match system.make_alias(identifier, type_desc) {
+                            Ok(_) => (),
+                            Err(err) => match err.kind() {
+                                CompileErrorKind::IdentifierNotFound(_) => {
+                                    waiting_type_list.push((identifier.clone(), type_desc.clone()));
+                                }
+                                _ => return Err(err),
+                            },
+                        }
+                    }
+                    Statement::Class(class_decl) => {
+                        will_waiting_ids.push(class_decl.identifier().to_string());
+
+                        let hi_bit = 0;
+                        match ClassDescriptor::parse(
+                            &class_decl,
+                            &system,
+                            ClassIndex(system.classes.len() as u32 | hi_bit),
+                        ) {
+                            Ok(class) => system.add_class(class)?,
+                            Err(err) => match err.kind() {
+                                CompileErrorKind::IdentifierNotFound(_) => {
+                                    waiting_class_list.push(class_decl.clone());
+                                }
+                                _ => return Err(err),
+                            },
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Attempt to resolve forward references
+            for _ in 0..8 {
+                let mut waiting_list2 = Vec::new();
+                for item in waiting_type_list.iter().rev() {
+                    let (identifier, type_desc) = item;
+                    if !will_waiting_ids.contains(&type_desc.to_string()) {
+                        return Err(CompileError::identifier_not_found(&type_desc.identifier()));
+                    }
                     match system.make_alias(identifier, type_desc) {
-                        Ok(_) => (),
+                        Ok(_) => {}
                         Err(err) => match err.kind() {
-                            CompileErrorKind::IdentifierNotFound => {
-                                waiting_type_list.push((identifier.clone(), type_desc.clone()));
+                            CompileErrorKind::IdentifierNotFound(_) => {
+                                waiting_list2.push((identifier.clone(), type_desc.clone()));
                             }
                             _ => return Err(err),
                         },
                     }
                 }
-                _ => (),
-            }
-        }
-
-        // Attempt to resolve forward references
-        for _ in 0..8 {
-            let mut waiting_list2 = Vec::new();
-            for item in waiting_type_list.iter().rev() {
-                let (identifier, type_desc) = item;
-                if !will_waiting_ids.contains(&type_desc.as_string()) {
-                    return Err(CompileError::identifier_not_found(&type_desc.identifier()));
-                }
-                match system.make_alias(identifier, type_desc) {
-                    Ok(_) => (),
-                    Err(err) => match err.kind() {
-                        CompileErrorKind::IdentifierNotFound => {
-                            waiting_list2.push((identifier.clone(), type_desc.clone()));
-                        }
-                        _ => return Err(err),
-                    },
-                }
-            }
-            waiting_type_list = waiting_list2;
-            let mut waiting_list2 = Vec::new();
-            for item in waiting_type_list.iter() {
-                let (identifier, type_desc) = item;
-                if !will_waiting_ids.contains(&type_desc.as_string()) {
-                    return Err(CompileError::identifier_not_found(&type_desc.identifier()));
-                }
-                match system.make_alias(identifier, type_desc) {
-                    Ok(_) => (),
-                    Err(err) => match err.kind() {
-                        CompileErrorKind::IdentifierNotFound => {
-                            waiting_list2.push((identifier.clone(), type_desc.clone()));
-                        }
-                        _ => return Err(err),
-                    },
-                }
-            }
-            waiting_type_list = waiting_list2;
-        }
-        if let Some(item) = waiting_type_list.first() {
-            return Err(CompileError::identifier_not_found_looping(
-                &item.1.identifier(),
-            ));
-        }
-
-        for statement in ast.module() {
-            match statement {
-                Statement::Class(class_decl) => {
-                    let hi_bit = 0;
-                    let class = ClassDescriptor::parse(
-                        class_decl,
-                        &system,
-                        ClassIndex(system.classes.len() as u32 | hi_bit),
-                    )?;
-                    if system.get(class.identifier().as_str()).is_some() {
-                        return Err(CompileError::duplicate_identifier(class.identifier()));
-                    } else {
-                        system.global_objects.insert(
-                            class.identifier().to_string().clone(),
-                            GlobalObjectIndex::Class(class.index()),
-                        );
-                        let class = Arc::new(class);
-                        system.classes.push(class.clone());
-                        system.types.insert(
-                            class.identifier().to_string(),
-                            Arc::new(TypeDescriptor {
-                                identifier: class.identifier().to_string(),
-                                kind: TypeKind::Class(class.clone()),
-                            }),
-                        );
+                waiting_type_list = waiting_list2;
+                let mut waiting_list2 = Vec::new();
+                for item in waiting_type_list.iter() {
+                    let (identifier, type_desc) = item;
+                    if !will_waiting_ids.contains(&type_desc.to_string()) {
+                        return Err(CompileError::identifier_not_found(&type_desc.identifier()));
+                    }
+                    match system.make_alias(identifier, type_desc) {
+                        Ok(_) => {}
+                        Err(err) => match err.kind() {
+                            CompileErrorKind::IdentifierNotFound(_) => {
+                                waiting_list2.push((identifier.clone(), type_desc.clone()));
+                            }
+                            _ => return Err(err),
+                        },
                     }
                 }
-                _ => {}
+                waiting_type_list = waiting_list2;
+
+                let mut waiting_list2 = Vec::new();
+                for class_decl in waiting_class_list.iter().rev() {
+                    let hi_bit = 0;
+                    match ClassDescriptor::parse(
+                        &class_decl,
+                        &system,
+                        ClassIndex(system.classes.len() as u32 | hi_bit),
+                    ) {
+                        Ok(class) => system.add_class(class)?,
+                        Err(err) => match err.kind() {
+                            CompileErrorKind::IdentifierNotFound(_) => {
+                                waiting_list2.push(class_decl.clone());
+                            }
+                            _ => return Err(err),
+                        },
+                    }
+                }
+                waiting_class_list = waiting_list2;
+                last_class_errors.clear();
+                let mut waiting_list2 = Vec::new();
+                for class_decl in waiting_class_list.iter() {
+                    let hi_bit = 0;
+                    match ClassDescriptor::parse(
+                        &class_decl,
+                        &system,
+                        ClassIndex(system.classes.len() as u32 | hi_bit),
+                    ) {
+                        Ok(class) => system.add_class(class)?,
+                        Err(err) => match err.kind() {
+                            CompileErrorKind::IdentifierNotFound(_) => {
+                                waiting_list2.push(class_decl.clone());
+                                last_class_errors.push(err);
+                            }
+                            _ => return Err(err),
+                        },
+                    }
+                }
+                waiting_class_list = waiting_list2;
+            }
+            if let Some(item) = waiting_type_list.first() {
+                return Err(CompileError::identifier_not_found_looping(
+                    item.1.identifier(),
+                ));
+            }
+            if let Some(item) = last_class_errors.first() {
+                match item.kind() {
+                    CompileErrorKind::IdentifierNotFound(id) => {
+                        return Err(CompileError::identifier_not_found_looping(id));
+                    }
+                    _ => return Err(item.clone()),
+                }
             }
         }
 
@@ -205,30 +248,76 @@ impl TypeSystem {
                 Statement::Function(func_decl) => {
                     let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
                     let func = FunctionDescriptor::parse(
+                        None,
+                        None,
                         func_decl,
                         &system,
                         FuncIndex(system.functions.len() as u32 | hi_bit),
                     )?;
-                    system.add_function(func)?;
+                    system
+                        .add_function(&func)
+                        .ok_or(CompileError::duplicate_identifier(func_decl.identifier()))?;
                 }
                 _ => {}
             }
         }
 
+        let mut classes2 = Vec::new();
+        core::mem::swap(&mut classes2, &mut system.classes);
+        for class in &classes2 {
+            for member in class.members() {
+                match member.1 {
+                    class::ClassMember::Field(_, _) => {}
+                    class::ClassMember::Method(func_desc) => {
+                        func_desc.set_index(FuncIndex(system.functions.len() as u32));
+                        system.add_function(func_desc).unwrap();
+                    }
+                }
+            }
+        }
+        system.classes = classes2;
+
         Ok(system)
     }
 
-    pub fn add_function(&mut self, func: FunctionDescriptor) -> Result<(), CompileError> {
-        if self.global_object(func.identifier().as_str()).is_none() {
-            self.global_objects.insert(
-                func.identifier().to_string().clone(),
-                GlobalObjectIndex::Funtion(func.index()),
-            );
-            self.functions.push(Arc::new(func));
+    pub fn add_class(&mut self, class: ClassDescriptor) -> Result<(), CompileError> {
+        if self.get(class.identifier().as_str()).is_some() {
+            Err(CompileError::duplicate_identifier(class.identifier()))
         } else {
-            return Err(CompileError::duplicate_identifier(func.identifier()));
+            self.global_names.insert(
+                class.identifier().to_string().clone(),
+                GlobalNameIndex::Class(class.index()),
+            );
+            let class = Arc::new(class);
+            self.classes.push(class.clone());
+            let class_type = Arc::new(TypeDescriptor {
+                identifier: class.identifier().to_string(),
+                kind: TypeKind::Class(class.clone()),
+            });
+            self.types
+                .borrow_mut()
+                .insert(class.identifier().to_string(), class_type.clone());
+
+            // let optional = Arc::new(TypeDescriptor::make_optional(&class_type));
+            // self.types
+            //     .borrow_mut()
+            //     .insert(optional.identifier().to_string(), optional.clone());
+
+            Ok(())
         }
-        Ok(())
+    }
+
+    pub fn add_function(&mut self, func: &Arc<FunctionDescriptor>) -> Option<()> {
+        if self.global_name(func.identifier()).is_none() {
+            self.global_names.insert(
+                func.identifier().to_string().clone(),
+                GlobalNameIndex::Function(func.index()),
+            );
+            self.functions.push(func.clone());
+            Some(())
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -247,18 +336,28 @@ impl TypeSystem {
     }
 
     #[inline]
-    pub fn all_types(&self) -> impl Iterator<Item = &Arc<TypeDescriptor>> {
-        self.types.values()
+    pub fn get(&self, identifier: &str) -> Option<Arc<TypeDescriptor>> {
+        self.types.borrow().get(identifier).map(|v| v.clone())
     }
 
     #[inline]
-    pub fn get(&self, identifier: &str) -> Option<&Arc<TypeDescriptor>> {
-        self.types.get(identifier)
-    }
-
-    #[inline]
-    pub fn from_ast(&self, ast_type: &ast::class::TypeDeclaration) -> Option<&Arc<TypeDescriptor>> {
-        self.get(&ast_type.as_string())
+    pub fn from_ast(&self, ast_type: &ast::class::TypeDeclaration) -> Option<Arc<TypeDescriptor>> {
+        match ast_type {
+            ast::class::TypeDeclaration::Simple(id) => self.get(&id.to_string()),
+            ast::class::TypeDeclaration::Optional(id) => {
+                if let Some(v) = self.get(&ast_type.to_string()) {
+                    return Some(v);
+                }
+                let mut types = self.types.borrow_mut();
+                let Some(target) = types.get(id.as_str()) else {
+                    return None;
+                };
+                let type_desc = Arc::new(TypeDescriptor::make_optional(target));
+                types.insert(type_desc.identifier().to_string(), type_desc.clone());
+                drop(types);
+                Some(type_desc)
+            }
+        }
     }
 
     #[inline]
@@ -268,7 +367,7 @@ impl TypeSystem {
 
     #[inline]
     pub fn builtin_boolean(&self) -> Arc<TypeDescriptor> {
-        self.get(BUILTIN_BOOLEAN).map(|v| v.clone()).unwrap()
+        self.get(BUILTIN_BOOLEAN).unwrap()
     }
 
     #[inline]
@@ -364,9 +463,10 @@ impl TypeSystem {
             match target.kind() {
                 TypeKind::Primitive(primitive) => return *primitive,
                 TypeKind::Alias(arc) => target = arc,
-                TypeKind::Reference(_) => return self.type_usize,
-                TypeKind::Optional(_) => return self.type_usize,
-                TypeKind::Class(_) => return self.type_usize,
+                TypeKind::Reference(_)
+                | TypeKind::Class(_)
+                | TypeKind::Function(_)
+                | TypeKind::Optional(_) => return self.type_usize,
             }
         }
     }
@@ -378,6 +478,7 @@ impl TypeSystem {
         }
         let type_desc = TypeDescriptor::make_alias(identifier, &self.primitive_type(primitive));
         self.types
+            .borrow_mut()
             .insert(identifier.to_string(), Arc::new(type_desc));
         Ok(())
     }
@@ -403,7 +504,9 @@ impl TypeSystem {
                 return Err(CompileError::invalid_type(&type_decl.identifier()));
             }
             let desc = TypeDescriptor::make_alias(identifier.as_str(), &desc);
-            self.types.insert(identifier.to_string(), Arc::new(desc));
+            self.types
+                .borrow_mut()
+                .insert(identifier.to_string(), Arc::new(desc));
         } else {
             return Err(CompileError::identifier_not_found(&type_decl.identifier()));
         }
@@ -420,13 +523,25 @@ impl TypeSystem {
             return Err(CompileError::duplicate_identifier(identifier));
         }
         let desc = TypeDescriptor::make_reference(identifier.as_str(), target);
-        self.types.insert(identifier.to_string(), Arc::new(desc));
+        self.types
+            .borrow_mut()
+            .insert(identifier.to_string(), Arc::new(desc));
 
         Ok(())
     }
 
     #[inline]
+    pub fn prefixed_identifier(prefix: Option<&str>, identifier: &str) -> String {
+        if let Some(prefix) = prefix {
+            format!("{}:{}", prefix, identifier)
+        } else {
+            identifier.to_owned()
+        }
+    }
+
+    #[inline]
     pub fn mangled<'a, T>(
+        prefix: Option<&str>,
         identifier: &str,
         _param_types: T,
         _result_type: &Arc<TypeDescriptor>,
@@ -434,9 +549,10 @@ impl TypeSystem {
     where
         T: Iterator<Item = &'a TypeDescriptor>,
     {
+        let id = Self::prefixed_identifier(prefix, identifier);
         format!(
             "${}",
-            identifier,
+            id,
             // param_types.map(|v| v.mangled()).collect::<String>(),
             // result_type.mangled(),
         )
@@ -623,13 +739,13 @@ impl TypeSystem {
         ty.map(|v| v.clone()).unwrap_or(self.builtin_void())
     }
 
-    pub fn global_object(&self, identifier: &str) -> Option<GlobalObjectIndex> {
-        self.global_objects.get(&identifier.to_string()).map(|v| *v)
+    pub fn global_name(&self, identifier: &str) -> Option<GlobalNameIndex> {
+        self.global_names.get(&identifier.to_string()).map(|v| *v)
     }
 
     pub fn function(&self, identifier: &str) -> Option<&Arc<FunctionDescriptor>> {
-        let index = match self.global_object(identifier)? {
-            GlobalObjectIndex::Funtion(v) => v,
+        let index = match self.global_name(identifier)? {
+            GlobalNameIndex::Function(v) => v,
             _ => return None,
         };
         for func in &self.functions {
@@ -641,8 +757,8 @@ impl TypeSystem {
     }
 
     pub fn class(&self, identifier: &str) -> Option<&Arc<ClassDescriptor>> {
-        let index = match self.global_object(identifier)? {
-            GlobalObjectIndex::Class(v) => v,
+        let index = match self.global_name(identifier)? {
+            GlobalNameIndex::Class(v) => v,
             _ => return None,
         };
         for class in &self.classes {
@@ -677,7 +793,7 @@ pub trait Resolve<T: ?Sized> {
 
 impl Resolve<ast::class::TypeDeclaration> for TypeSystem {
     fn resolve(&self, desc: &ast::class::TypeDeclaration) -> Option<Arc<TypeDescriptor>> {
-        self.resolve(desc.as_string().as_str())
+        self.resolve(desc.to_string().as_str())
     }
 
     fn resolve_primitive(&self, desc: &ast::class::TypeDeclaration) -> Option<Primitive> {
@@ -688,7 +804,7 @@ impl Resolve<ast::class::TypeDeclaration> for TypeSystem {
 
 impl Resolve<str> for TypeSystem {
     fn resolve(&self, identifier: &str) -> Option<Arc<TypeDescriptor>> {
-        self.get(identifier).and_then(|v| self.resolve(v))
+        self.get(identifier).and_then(|v| self.resolve(&v))
     }
 
     fn resolve_primitive(&self, identifier: &str) -> Option<Primitive> {
@@ -702,9 +818,10 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
         match desc.kind() {
             TypeKind::Primitive(_) => Some(desc.clone()),
             TypeKind::Alias(alias) => self.resolve(alias),
-            TypeKind::Reference(_) => None,
-            TypeKind::Optional(_) => None,
-            TypeKind::Class(_) => None,
+            TypeKind::Reference(_)
+            | TypeKind::Class(_)
+            | TypeKind::Function(_)
+            | TypeKind::Optional(_) => None,
         }
     }
 
@@ -712,9 +829,10 @@ impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
         match desc.kind() {
             TypeKind::Primitive(primitive) => Some(*primitive),
             TypeKind::Alias(alias) => self.resolve_primitive(alias),
-            TypeKind::Reference(_) => None,
-            TypeKind::Optional(_) => None,
-            TypeKind::Class(_) => None,
+            TypeKind::Reference(_)
+            | TypeKind::Class(_)
+            | TypeKind::Function(_)
+            | TypeKind::Optional(_) => None,
         }
     }
 }
@@ -739,6 +857,14 @@ impl TypeDescriptor {
         Self {
             identifier: identifier.to_string(),
             kind: TypeKind::Alias(alias.clone()),
+        }
+    }
+
+    #[inline]
+    fn make_optional(target: &Arc<TypeDescriptor>) -> Self {
+        Self {
+            identifier: format!("{}?", target.identifier()),
+            kind: TypeKind::Optional(target.clone()),
         }
     }
 
@@ -843,22 +969,21 @@ pub enum TypeKind {
     Primitive(Primitive),
     Alias(Arc<TypeDescriptor>),
     Reference(Arc<TypeDescriptor>),
-    Optional(Arc<TypeDescriptor>),
     Class(Arc<ClassDescriptor>),
-    //Function(T),
+    Function(Arc<()>),
+    Optional(Arc<TypeDescriptor>),
 }
 
 impl core::fmt::Debug for TypeKind {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Primitive(arg0) => f.debug_tuple("Primitive").field(arg0).finish(),
-            Self::Alias(arg0) => f.debug_tuple("Alias").field(&arg0.identifier()).finish(),
-            Self::Reference(arg0) => f
-                .debug_tuple("Reference")
-                .field(&arg0.identifier())
-                .finish(),
-            Self::Class(arg0) => f.debug_tuple("Class").field(&arg0.identifier()).finish(),
-            Self::Optional(arg0) => f.debug_tuple("Optional").field(&arg0.identifier()).finish(),
+            Self::Primitive(arg0) => write!(f, "Primitive({})", arg0),
+            Self::Alias(arg0) => write!(f, "Alias({})", arg0.identifier()),
+            Self::Reference(arg0) => write!(f, "Ref({})", arg0.identifier()),
+            Self::Class(arg0) => write!(f, "Class({})", arg0.identifier().as_str()),
+            // Self::Function(arg0) => write!(f, "Function({})", arg0.identifier().as_str()),
+            Self::Function(arg0) => write!(f, "Function({:?})", arg0),
+            Self::Optional(arg0) => write!(f, "Optional({})", arg0.identifier()),
         }
     }
 }
@@ -898,8 +1023,17 @@ impl InferredType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum GlobalObjectIndex {
-    Funtion(FuncIndex),
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlobalNameIndex {
+    Function(FuncIndex),
     Class(ClassIndex),
+}
+
+impl core::fmt::Debug for GlobalNameIndex {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Function(arg0) => (arg0 as &dyn core::fmt::Debug).fmt(f),
+            Self::Class(arg0) => (arg0 as &dyn core::fmt::Debug).fmt(f),
+        }
+    }
 }

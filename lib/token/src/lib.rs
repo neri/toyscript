@@ -889,7 +889,7 @@ impl<KEYWORD: Copy + Clone> TokenFragment<KEYWORD> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TokenError {
     kind: TokenErrorKind,
     line: usize,

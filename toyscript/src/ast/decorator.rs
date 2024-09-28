@@ -1,7 +1,7 @@
 use crate::*;
 use token::TokenPosition;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Decorator {
     identifier: Identifier,
     params: Vec<Token<Keyword>>,

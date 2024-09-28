@@ -1,5 +1,6 @@
 use crate::*;
 use ast::function::FunctionDeclaration;
+use core::sync::atomic::{AtomicU32, Ordering};
 use keyword::ModifierFlag;
 use types::{index::FuncIndex, TypeDescriptor, TypeSystem};
 
@@ -7,22 +8,23 @@ pub const MAIN_NAME: &str = "main";
 
 #[derive(Debug)]
 pub struct FunctionDescriptor {
-    index: FuncIndex,
+    index: AtomicU32,
     modifiers: ModifierFlag,
     signature: String,
-    identifier: Identifier,
+    identifier: String,
     param_types: Box<[Arc<TypeDescriptor>]>,
     result_type: Arc<TypeDescriptor>,
 }
 
 impl FunctionDescriptor {
     pub fn parse(
+        prefix: Option<&str>,
+        id_override: Option<&str>,
         decl: &FunctionDeclaration,
         types: &TypeSystem,
         func_idx: FuncIndex,
-    ) -> Result<Self, CompileError> {
+    ) -> Result<Arc<Self>, CompileError> {
         let mut modifiers = decl.modifiers();
-        let identifier = decl.identifier().clone();
 
         let mut param_types = Vec::new();
         for param in decl.parameters() {
@@ -49,46 +51,51 @@ impl FunctionDescriptor {
             None => types.builtin_void(),
         };
 
+        let identifier = id_override.unwrap_or(decl.identifier().as_str());
+        let identifier = TypeSystem::prefixed_identifier(prefix, identifier);
         let signature;
-        if identifier.as_str() == MAIN_NAME {
-            signature = format!("${}", identifier.as_str());
+        if identifier == MAIN_NAME {
+            signature = format!("${}", identifier);
             modifiers.insert(ModifierFlag::EXPORT);
         } else {
             signature = TypeSystem::mangled(
-                identifier.as_str(),
+                prefix,
+                id_override.unwrap_or(&identifier),
                 param_types.iter().map(|v| v.as_ref()),
                 &result_type,
             );
         }
 
-        Ok(FunctionDescriptor {
-            index: func_idx,
+        Ok(Arc::new(FunctionDescriptor {
+            index: AtomicU32::new(func_idx.as_u32()),
             modifiers,
-            identifier,
+            identifier: identifier.to_owned(),
             signature,
             param_types: param_types.into_boxed_slice(),
             result_type,
-        })
+        }))
     }
 
     #[inline]
     pub fn intrinsic(
         index: FuncIndex,
         modifiers: ModifierFlag,
-        identifier: Identifier,
+        prefix: Option<&str>,
+        identifier: &str,
         param_types: Vec<Arc<TypeDescriptor>>,
         result_type: Arc<TypeDescriptor>,
     ) -> Self {
         let signature = TypeSystem::mangled(
-            identifier.as_str(),
+            prefix,
+            identifier,
             param_types.iter().map(|v| v.as_ref()),
             &result_type,
         );
         Self {
-            index,
+            index: AtomicU32::new(index.as_u32()),
             modifiers,
             signature,
-            identifier,
+            identifier: identifier.to_owned(),
             param_types: param_types.into_boxed_slice(),
             result_type,
         }
@@ -96,7 +103,12 @@ impl FunctionDescriptor {
 
     #[inline]
     pub fn index(&self) -> FuncIndex {
-        self.index
+        FuncIndex(self.index.load(Ordering::Relaxed))
+    }
+
+    #[inline]
+    pub(super) fn set_index(&self, new_value: FuncIndex) {
+        self.index.store(new_value.as_u32(), Ordering::SeqCst)
     }
 
     #[inline]
@@ -110,7 +122,7 @@ impl FunctionDescriptor {
     }
 
     #[inline]
-    pub fn identifier(&self) -> &Identifier {
+    pub fn identifier(&self) -> &str {
         &self.identifier
     }
 

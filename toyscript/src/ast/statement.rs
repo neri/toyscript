@@ -21,7 +21,7 @@ pub enum Statement {
     Block(Block),
 
     /// `function`
-    Function(Box<FunctionDeclaration>),
+    Function(Arc<FunctionDeclaration>),
 
     /// Variable Declaration
     Variable(VariableDeclaration),
@@ -30,10 +30,10 @@ pub enum Statement {
     TypeAlias(Identifier, TypeDeclaration),
 
     /// Class Declaration
-    Class(Box<ClassDeclaration>),
+    Class(Arc<ClassDeclaration>),
 
     /// Enum Declaration
-    Enum(Box<EnumDeclaration>),
+    Enum(Arc<EnumDeclaration>),
 
     /// `if` expr `{` block `}` `else` `if` expr `{` block `}` `else` `{` block `}`
     IfStatement(Box<[IfType]>),
@@ -111,7 +111,7 @@ impl Statement {
                                 None,
                                 tokens,
                             )?;
-                            return Ok(Self::Function(Box::new(func_decl)));
+                            return Ok(Self::Function(Arc::new(func_decl)));
                         }
                         Keyword::Const | Keyword::Let | Keyword::Var => {
                             if let Some(item) = decorators.first() {
@@ -134,7 +134,7 @@ impl Statement {
                                 token,
                                 tokens,
                             )?;
-                            return Ok(Self::Class(Box::new(class_decl)));
+                            return Ok(Self::Class(Arc::new(class_decl)));
                         }
                         Keyword::Enum => {
                             let enum_decl = EnumDeclaration::parse(
@@ -143,7 +143,7 @@ impl Statement {
                                 token,
                                 tokens,
                             )?;
-                            return Ok(Self::Enum(Box::new(enum_decl)));
+                            return Ok(Self::Enum(Arc::new(enum_decl)));
                         }
                         Keyword::For => {
                             if !modifiers.is_empty() {
@@ -199,7 +199,7 @@ impl Statement {
                                             None,
                                             tokens,
                                         )?;
-                                        return Ok(Self::Function(Box::new(func_decl)));
+                                        return Ok(Self::Function(Arc::new(func_decl)));
                                     }
                                     // Keyword::Const | Keyword::Let | Keyword::Var => {
                                     //     let var_decl = VariableDeclaration::parse_declare(

@@ -2,7 +2,7 @@ use super::*;
 use class::TypeDeclaration;
 use token::TokenStream;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeParameter {
     identifier: Identifier,
     extends: Option<TypeDeclaration>,

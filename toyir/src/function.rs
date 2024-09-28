@@ -884,7 +884,7 @@ impl BlockIndex {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct LocalIndex(u32);
 
 impl LocalIndex {
@@ -901,6 +901,12 @@ impl LocalIndex {
     #[inline]
     pub const fn as_usize(&self) -> usize {
         self.0 as usize
+    }
+}
+
+impl core::fmt::Debug for LocalIndex {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "LocalIndex({})", self.0)
     }
 }
 

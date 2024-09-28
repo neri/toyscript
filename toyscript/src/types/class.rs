@@ -2,7 +2,14 @@ use super::keyword::ModifierFlag;
 use crate::*;
 use ast::{class::ClassDeclaration, expression::Expression};
 use cg::scope::VariableDescriptor;
-use types::{index::ClassIndex, TypeDescriptor};
+use toyir::LocalIndex;
+use types::{
+    function::FunctionDescriptor,
+    index::{ClassIndex, FuncIndex},
+    TypeDescriptor,
+};
+
+pub const CTOR_NAME: &str = ".ctor";
 
 #[derive(Debug)]
 pub struct ClassDescriptor {
@@ -17,7 +24,6 @@ impl ClassDescriptor {
     pub fn parse(
         decl: &ClassDeclaration,
         types: &TypeSystem,
-
         class_idx: ClassIndex,
     ) -> Result<Self, CompileError> {
         let modifiers = decl.modifiers();
@@ -35,7 +41,7 @@ impl ClassDescriptor {
         };
 
         let mut members = BTreeMap::<String, ClassMember>::new();
-        for vars in decl.variables() {
+        for vars in decl.var_decls() {
             for var in vars.varibales() {
                 let key = var.identifier().to_string();
                 if members.get(&key).is_some() {
@@ -53,16 +59,31 @@ impl ClassDescriptor {
                 } else {
                     None
                 };
-                let var_desc = VariableDescriptor::from_var_decl(var, type_desc);
-
+                let mut var_desc = VariableDescriptor::from_var_decl(var, type_desc.as_ref());
+                var_desc.set_index(unsafe { LocalIndex::new(members.len() as u32) });
                 members.insert(
                     key,
-                    ClassMember {
-                        identifier: var.identifier().clone(),
-                        kind: MemberKind::Field(var_desc, var.assignment().map(|v| v.clone())),
-                    },
+                    ClassMember::Field(var_desc, var.assignment().map(|v| v.clone())),
                 );
             }
+        }
+
+        let prefix = identifier.to_string();
+        let prefix = Some(prefix.as_str());
+        for func in decl.functions() {
+            let key = func.identifier().as_str();
+            let key = match Keyword::from_str(key) {
+                Some(Keyword::Constructor) => CTOR_NAME.to_owned(),
+                _ => key.to_string(),
+            };
+            if members.get(&key).is_some() {
+                return Err(CompileError::duplicate_identifier(&func.identifier()));
+            }
+            let func_desc =
+                FunctionDescriptor::parse(prefix, Some(key.as_str()), func, types, unsafe {
+                    FuncIndex::new(usize::MAX)
+                })?;
+            members.insert(key, ClassMember::Method(func_desc));
         }
 
         Ok(ClassDescriptor {
@@ -101,25 +122,17 @@ impl ClassDescriptor {
 }
 
 #[derive(Debug)]
-pub struct ClassMember {
-    identifier: Identifier,
-    kind: MemberKind,
-}
-
-#[derive(Debug)]
-pub enum MemberKind {
+pub enum ClassMember {
     Field(VariableDescriptor, Option<Expression>),
-    Method(usize),
+    Method(Arc<FunctionDescriptor>),
 }
 
 impl ClassMember {
     #[inline]
-    pub fn identifier(&self) -> &Identifier {
-        &self.identifier
-    }
-
-    #[inline]
-    pub fn kind(&self) -> &MemberKind {
-        &self.kind
+    pub fn identifier(&self) -> &str {
+        match self {
+            ClassMember::Field(var_desc, _) => var_desc.identifier().as_str(),
+            ClassMember::Method(func_desc) => func_desc.identifier(),
+        }
     }
 }

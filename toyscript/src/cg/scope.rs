@@ -156,7 +156,7 @@ impl Scope<'_> {
         if self
             .storage
             .types
-            .global_object(var_desc.identifier().as_str())
+            .global_name(var_desc.identifier().as_str())
             .is_some()
         {
             return Err(CompileError::duplicate_identifier(&var_desc.identifier));
