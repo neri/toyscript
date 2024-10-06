@@ -12,13 +12,11 @@ use alloc::vec::Vec;
 use core::mem::size_of_val;
 use core::str;
 
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WriteError {
     OutOfMemory,
 }
 
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ReadError {
     InvalidData,

@@ -44,7 +44,6 @@ fn make_enum(
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// {comment}
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum {class_name} {{
 "

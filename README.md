@@ -1,6 +1,6 @@
 # ToyScript
 
-A Lightweight toy language environment with high affinity for WebAssembly
+A toy language environment for WebAssembly
 
 - [Playground](https://nerry.jp/tsc/)
 - [Repository](https://github.com/neri/toyscript)
@@ -14,7 +14,6 @@ A Lightweight toy language environment with high affinity for WebAssembly
 
 ### Short-Term Goals
 
-* Milestone-1: A subset of the WebAssembly MVP environment
 * Milestone-2: TypeScript-like toy language environment
 
 ### Long-Term Goals
@@ -23,7 +22,6 @@ A Lightweight toy language environment with high affinity for WebAssembly
 
 ### Not Goals
 
-* Alternative to WebAssembly
 * Alternative to TypeScript
 
 ## Modules
@@ -31,10 +29,8 @@ A Lightweight toy language environment with high affinity for WebAssembly
 | Path           | Contents                 |
 | -------------- | ------------------------ |
 | `tsc/`         | ToyScript CLI Frontend   |
-| `tas/`         | ToyAssembly CLI Frontend |
 | `toyscript/`   | ToyScript Backend        |
 | `toyir/`       | ToyIR Backend            |
-| `toyassembly/` | ToyAssembly Backend      |
 
 ## License
 

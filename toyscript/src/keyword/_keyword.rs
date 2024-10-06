@@ -3,7 +3,6 @@
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// ToyScript Reserved Keywords
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Keyword {
     /// "any"

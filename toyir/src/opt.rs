@@ -54,259 +54,36 @@ impl MinimalCodeOptimizer {
     }
 
     fn _optimize(&mut self) -> Result<(), OptimizeError> {
-        {
-            // Reduce wasted instructions that lead to DROP instructions first to shorten optimization time.
-            let mut ci = 0;
-            while let Ok(base) = self.array_index(CodeIndex(ci)) {
-                ci += 1;
-                let (len, opcode) = self.get_op(base)?;
-
-                match opcode {
-                    Op::Drop => {
-                        let operand = CodeIndex(self.param(base, len, 1)?);
-                        if self.chain_drop(operand)? {
-                            self.replace_nop(base)?;
-                        }
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-
-        {
-            // Reduce unnecessary operations
-            let mut ci = 0;
-            let mut skip_until_end = false;
-            while let Ok(base) = self.array_index(CodeIndex(ci)) {
-                ci += 1;
-                let (len, opcode) = self.get_op(base)?;
-
-                if skip_until_end {
-                    if opcode != Op::End {
-                        self.replace_nop(base)?;
-                    } else {
-                        skip_until_end = false;
-                    }
-                    continue;
-                }
-
-                match opcode {
-                    Op::Br | Op::Return | Op::Unreachable => {
-                        skip_until_end = true;
-                    }
-
-                    Op::BrIf => {
-                        let block_index = self.param(base, len, 1)?;
-                        let operand = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
-                        if let Some(const_val) = self.get_i32_const(operand)? {
-                            if const_val == 0 {
-                                self.replace_nop(operand)?;
-                                self.replace_nop(base)?;
-                            } else {
-                                self.replace_nop(operand)?;
-                                self.replace(base, Op::Br, &[block_index])?;
-                                skip_until_end = true;
-                            }
-                        }
-                    }
-
-                    Op::Drop => {
-                        let operand = CodeIndex(self.param(base, len, 1)?);
-                        if self.chain_drop(operand)? {
-                            self.replace_nop(base)?;
-                        }
-                    }
-
-                    // cmp
-                    Op::Eq
-                    | Op::GeS
-                    | Op::GeU
-                    | Op::GtS
-                    | Op::GtU
-                    | Op::LeS
-                    | Op::LeU
-                    | Op::LtS
-                    | Op::LtU => {
-                        let result = CodeIndex(self.param(base, len, 1)?);
-                        let lhs = CodeIndex(self.param(base, len, 2)?);
-                        let rhs = CodeIndex(self.param(base, len, 3)?);
-                        self.reduce_cmp(base, opcode, result, lhs, rhs)?;
-                    }
-
-                    // binop
-                    Op::Add
-                    | Op::And
-                    | Op::DivS
-                    | Op::DivU
-                    | Op::Mul
-                    | Op::Ne
-                    | Op::Or
-                    | Op::RemS
-                    | Op::RemU
-                    | Op::Shl
-                    | Op::ShrS
-                    | Op::ShrU
-                    | Op::Sub
-                    | Op::Xor => {
-                        let result = CodeIndex(self.param(base, len, 1)?);
-                        let lhs = CodeIndex(self.param(base, len, 2)?);
-                        let rhs = CodeIndex(self.param(base, len, 3)?);
-                        self.reduce_binop(base, opcode, result, lhs, rhs)?;
-                    }
-
-                    // unop
-                    Op::Eqz => {
-                        let result = CodeIndex(self.param(base, len, 1)?);
-                        let target = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
-                        let (len2, op2) = self.get_op(target)?;
-                        match op2 {
-                            Op::Eqz => {
-                                // self.replace_opcode(target, Op::UnaryNop)?;
-                                // self.replace_opcode(base, Op::UnaryNop)?;
-                            }
-                            Op::I32Const => {
-                                let const_val = self.param(target, len2, 2)?;
-                                self.replace_nop(target)?;
-                                self.replace_i32_const(base, result, (const_val == 0) as i32)?;
-                            }
-
-                            Op::Eq
-                            | Op::Ne
-                            | Op::LtS
-                            | Op::GtS
-                            | Op::LeS
-                            | Op::GeS
-                            | Op::LtU
-                            | Op::GtU
-                            | Op::LeU
-                            | Op::GeU => {
-                                let lhs = CodeIndex(self.param(target, len2, 2)?);
-                                let rhs = CodeIndex(self.param(target, len2, 3)?);
-                                self.replace_nop(target)?;
-                                self.replace(
-                                    base,
-                                    op2.inverted_condition(),
-                                    &[result.0, lhs.0, rhs.0],
-                                )?;
-                            }
-
-                            _ => {}
-                        }
-                    }
-
-                    Op::LocalSet => {
-                        let operand_ci = CodeIndex(self.param(base, len, 1)?);
-                        let operand = self.array_index(operand_ci)?;
-                        let const_val = self.get_const(operand)?;
-                        if let Some(const_val) = const_val {
-                            let local_index = self.param(base, len, 2)?;
-                            let var_desc = self.get_local_mut(local_index as usize).unwrap();
-                            if var_desc.is_const() {
-                                var_desc.assignment = Some(const_val);
-                                if self.chain_drop(operand_ci)? {
-                                    self.replace_nop(base)?;
-                                }
-                            }
-                        }
-                    }
-
-                    Op::LocalTee => {
-                        let operand = self.array_index(CodeIndex(self.param(base, len, 3)?))?;
-                        let const_val = self.get_const(operand)?;
-                        if let Some(const_val) = const_val {
-                            let local_index = self.param(base, len, 2)?;
-                            let var_desc = self.get_local_mut(local_index as usize).unwrap();
-                            if var_desc.is_const() {
-                                var_desc.assignment = Some(const_val);
-                            }
-                        }
-                    }
-
-                    Op::LocalGet => {
-                        let result = CodeIndex(self.param(base, len, 1)?);
-                        let local_index = self.param(base, len, 2)?;
-                        let var_desc = self.get_local(local_index as usize).unwrap();
-                        if var_desc.is_const() {
-                            if let Some(value) = var_desc.assignment {
-                                self.replace_const(base, result, value)?;
-                            }
-                        }
-                    }
-
-                    Op::Cast => {
-                        let target = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
-                        if let Some(const_val) = self.get_const(target)? {
-                            let result = CodeIndex(self.param(base, len, 1)?);
-                            let new_type_id = self.param(base, len, 3)?;
-                            let old_type_id = self.param(base, len, 4)?;
-
-                            let new_type = Primitive::from_type_id(new_type_id).ok_or(
-                                OptimizeError::TypeCastError(target.as_usize(), new_type_id),
-                            )?;
-                            let old_type = Primitive::from_type_id(old_type_id).ok_or(
-                                OptimizeError::TypeCastError(target.as_usize(), old_type_id),
-                            )?;
-
-                            opt_cast(self, old_type, new_type, const_val, base, target, result)?;
-                        }
-                    }
-
-                    Op::Nop
-                    | Op::UnaryNop
-                    | Op::DropRight
-                    | Op::Drop2
-                    | Op::Block
-                    | Op::Call
-                    | Op::CallV
-                    | Op::Dec
-                    | Op::End
-                    | Op::F32Const
-                    | Op::F64Const
-                    | Op::I32Const
-                    | Op::I64Const
-                    | Op::Inc
-                    | Op::Loop
-                    | Op::Not
-                    | Op::Neg => {}
-                }
-            }
-        }
+        let mut will_remove_vars = Vec::new();
 
         for _ in 0..2 {
-            // Reduce unnecessary blocks
-            let mut block_freqs = BTreeMap::new();
             {
-                let mut last_block = None;
-                let mut block_empty_check = false;
-                let mut skip_until_end = false;
+                // Reduce wasted instructions that lead to DROP instructions first to shorten optimization time.
                 let mut ci = 0;
-                let mut block_stack = Vec::new();
                 while let Ok(base) = self.array_index(CodeIndex(ci)) {
                     ci += 1;
                     let (len, opcode) = self.get_op(base)?;
 
-                    if block_empty_check {
-                        match opcode {
-                            Op::Nop => {}
-                            Op::Br => {
-                                let block_index = self.param(base, len, 1)?;
-                                if let Some(last_block) = last_block {
-                                    if last_block == block_index {
-                                        self.replace_nop(base)?;
-                                        continue;
-                                    }
-                                }
-                                last_block = None;
-                                block_empty_check = false;
-                            }
-                            Op::Loop => {}
-                            _ => {
-                                last_block = None;
-                                block_empty_check = false;
+                    match opcode {
+                        Op::Drop => {
+                            let operand = CodeIndex(self.param(base, len, 1)?);
+                            if self.chain_drop(operand)? {
+                                self.replace_nop(base)?;
                             }
                         }
+
+                        _ => {}
                     }
+                }
+            }
+
+            {
+                // Reduce unnecessary operations
+                let mut ci = 0;
+                let mut skip_until_end = false;
+                while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                    ci += 1;
+                    let (len, opcode) = self.get_op(base)?;
 
                     if skip_until_end {
                         if opcode != Op::End {
@@ -318,103 +95,338 @@ impl MinimalCodeOptimizer {
                     }
 
                     match opcode {
-                        // Op::Nop => {}
-                        Op::Block => {
-                            let block_index = self.param(base, len, 1)?;
-                            block_stack.push(block_index << 1);
-                            block_freqs.insert(block_index, 0usize);
-                            last_block = Some(block_index);
-                            block_empty_check = true;
+                        Op::Br | Op::Return | Op::Unreachable => {
+                            skip_until_end = true;
                         }
-                        Op::Loop => {
+
+                        Op::BrIf => {
                             let block_index = self.param(base, len, 1)?;
-                            block_stack.push(block_index << 1 | 1);
-                            block_freqs.insert(block_index, 0usize);
+                            let operand = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
+                            if let Some(const_val) = self.get_i32_const(operand)? {
+                                if const_val == 0 {
+                                    self.replace_nop(operand)?;
+                                    self.replace_nop(base)?;
+                                } else {
+                                    self.replace_nop(operand)?;
+                                    self.replace(base, Op::Br, &[block_index])?;
+                                    skip_until_end = true;
+                                }
+                            }
                         }
-                        Op::End => {
-                            let block_index = self.param(base, len, 1)?;
-                            block_stack
-                                .pop()
-                                .ok_or(OptimizeError::OutOfBlock(base.as_usize(), block_index))?;
-                        }
-                        Op::Br => {
-                            let block_index = self.param(base, len, 1)?;
-                            let last_block = block_stack.last().ok_or(
-                                OptimizeError::InvalidBranch(base.as_usize(), block_index),
-                            )?;
-                            if *last_block == (block_index << 1) {
+
+                        Op::Drop => {
+                            let operand = CodeIndex(self.param(base, len, 1)?);
+                            if self.chain_drop(operand)? {
                                 self.replace_nop(base)?;
-                                skip_until_end = true;
+                            }
+                        }
+
+                        // cmp
+                        Op::Eq
+                        | Op::GeS
+                        | Op::GeU
+                        | Op::GtS
+                        | Op::GtU
+                        | Op::LeS
+                        | Op::LeU
+                        | Op::LtS
+                        | Op::LtU => {
+                            let result = CodeIndex(self.param(base, len, 1)?);
+                            let lhs = CodeIndex(self.param(base, len, 2)?);
+                            let rhs = CodeIndex(self.param(base, len, 3)?);
+                            self.reduce_cmp(base, opcode, result, lhs, rhs)?;
+                        }
+
+                        // binop
+                        Op::Add
+                        | Op::And
+                        | Op::DivS
+                        | Op::DivU
+                        | Op::Mul
+                        | Op::Ne
+                        | Op::Or
+                        | Op::RemS
+                        | Op::RemU
+                        | Op::Shl
+                        | Op::ShrS
+                        | Op::ShrU
+                        | Op::Sub
+                        | Op::Xor => {
+                            let result = CodeIndex(self.param(base, len, 1)?);
+                            let lhs = CodeIndex(self.param(base, len, 2)?);
+                            let rhs = CodeIndex(self.param(base, len, 3)?);
+                            self.reduce_binop(base, opcode, result, lhs, rhs)?;
+                        }
+
+                        // unop
+                        Op::Eqz => {
+                            let result = CodeIndex(self.param(base, len, 1)?);
+                            let target = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
+                            let (len2, op2) = self.get_op(target)?;
+                            match op2 {
+                                Op::Eqz => {
+                                    // self.replace_opcode(target, Op::UnaryNop)?;
+                                    // self.replace_opcode(base, Op::UnaryNop)?;
+                                }
+                                Op::I32Const => {
+                                    let const_val = self.param(target, len2, 2)?;
+                                    self.replace_nop(target)?;
+                                    self.replace_i32_const(base, result, (const_val == 0) as i32)?;
+                                }
+
+                                Op::Eq
+                                | Op::Ne
+                                | Op::LtS
+                                | Op::GtS
+                                | Op::LeS
+                                | Op::GeS
+                                | Op::LtU
+                                | Op::GtU
+                                | Op::LeU
+                                | Op::GeU => {
+                                    let lhs = CodeIndex(self.param(target, len2, 2)?);
+                                    let rhs = CodeIndex(self.param(target, len2, 3)?);
+                                    self.replace_nop(target)?;
+                                    self.replace(
+                                        base,
+                                        op2.inverted_condition(),
+                                        &[result.0, lhs.0, rhs.0],
+                                    )?;
+                                }
+
+                                _ => {}
+                            }
+                        }
+
+                        Op::LocalSet => {
+                            let operand_ci = CodeIndex(self.param(base, len, 1)?);
+                            let local_index = self.param(base, len, 2)?;
+                            if will_remove_vars.contains(unsafe { &LocalIndex::new(local_index) }) {
+                                if self.chain_drop(operand_ci)? {
+                                    self.replace_nop(base)?;
+                                } else {
+                                    self.replace(base, Op::Drop, &[operand_ci.0])?;
+                                }
                             } else {
+                                let operand_ai = self.array_index(operand_ci)?;
+                                let const_val = self.get_const(operand_ai)?;
+                                if let Some(const_val) = const_val {
+                                    let var_desc =
+                                        self.get_local_mut(local_index as usize).unwrap();
+                                    if var_desc.is_const() {
+                                        var_desc.assignment = Some(const_val);
+                                        if self.chain_drop(operand_ci)? {
+                                            self.replace_nop(base)?;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Op::LocalTee => {
+                            let operand = self.array_index(CodeIndex(self.param(base, len, 3)?))?;
+                            let const_val = self.get_const(operand)?;
+                            if let Some(const_val) = const_val {
+                                let local_index = self.param(base, len, 2)?;
+                                let var_desc = self.get_local_mut(local_index as usize).unwrap();
+                                if var_desc.is_const() {
+                                    var_desc.assignment = Some(const_val);
+                                }
+                            }
+                        }
+
+                        Op::LocalGet => {
+                            let result = CodeIndex(self.param(base, len, 1)?);
+                            let local_index = self.param(base, len, 2)?;
+                            let var_desc = self.get_local(local_index as usize).unwrap();
+                            if var_desc.is_const() {
+                                if let Some(value) = var_desc.assignment {
+                                    self.replace_const(base, result, value)?;
+                                }
+                            }
+                        }
+
+                        Op::Cast => {
+                            let target = self.array_index(CodeIndex(self.param(base, len, 2)?))?;
+                            if let Some(const_val) = self.get_const(target)? {
+                                let result = CodeIndex(self.param(base, len, 1)?);
+                                let new_type_id = self.param(base, len, 3)?;
+                                let old_type_id = self.param(base, len, 4)?;
+
+                                let new_type = Primitive::from_type_id(new_type_id).ok_or(
+                                    OptimizeError::TypeCastError(target.as_usize(), new_type_id),
+                                )?;
+                                let old_type = Primitive::from_type_id(old_type_id).ok_or(
+                                    OptimizeError::TypeCastError(target.as_usize(), old_type_id),
+                                )?;
+
+                                opt_cast(
+                                    self, old_type, new_type, const_val, base, target, result,
+                                )?;
+                            }
+                        }
+
+                        Op::Nop
+                        | Op::UnaryNop
+                        | Op::DropRight
+                        | Op::Drop2
+                        | Op::Block
+                        | Op::Call
+                        | Op::CallV
+                        | Op::Dec
+                        | Op::End
+                        | Op::F32Const
+                        | Op::F64Const
+                        | Op::I32Const
+                        | Op::I64Const
+                        | Op::Inc
+                        | Op::Loop
+                        | Op::Not
+                        | Op::Neg => {}
+                    }
+                }
+            }
+
+            for _ in 0..2 {
+                // Reduce unnecessary blocks
+                let mut block_freqs = BTreeMap::new();
+                {
+                    let mut last_block = None;
+                    let mut block_empty_check = false;
+                    let mut skip_until_end = false;
+                    let mut ci = 0;
+                    let mut block_stack = Vec::new();
+                    while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                        ci += 1;
+                        let (len, opcode) = self.get_op(base)?;
+
+                        if block_empty_check {
+                            match opcode {
+                                Op::Nop => {}
+                                Op::Br => {
+                                    let block_index = self.param(base, len, 1)?;
+                                    if let Some(last_block) = last_block {
+                                        if last_block == block_index {
+                                            self.replace_nop(base)?;
+                                            continue;
+                                        }
+                                    }
+                                    last_block = None;
+                                    block_empty_check = false;
+                                }
+                                Op::Loop => {}
+                                _ => {
+                                    last_block = None;
+                                    block_empty_check = false;
+                                }
+                            }
+                        }
+
+                        if skip_until_end {
+                            if opcode != Op::End {
+                                self.replace_nop(base)?;
+                            } else {
+                                skip_until_end = false;
+                            }
+                            continue;
+                        }
+
+                        match opcode {
+                            // Op::Nop => {}
+                            Op::Block => {
+                                let block_index = self.param(base, len, 1)?;
+                                block_stack.push(block_index << 1);
+                                block_freqs.insert(block_index, 0usize);
+                                last_block = Some(block_index);
+                                block_empty_check = true;
+                            }
+                            Op::Loop => {
+                                let block_index = self.param(base, len, 1)?;
+                                block_stack.push(block_index << 1 | 1);
+                                block_freqs.insert(block_index, 0usize);
+                            }
+                            Op::End => {
+                                let block_index = self.param(base, len, 1)?;
+                                block_stack.pop().ok_or(OptimizeError::OutOfBlock(
+                                    base.as_usize(),
+                                    block_index,
+                                ))?;
+                            }
+                            Op::Br => {
+                                let block_index = self.param(base, len, 1)?;
+                                let last_block = block_stack.last().ok_or(
+                                    OptimizeError::InvalidBranch(base.as_usize(), block_index),
+                                )?;
+                                if *last_block == (block_index << 1) {
+                                    self.replace_nop(base)?;
+                                    skip_until_end = true;
+                                } else {
+                                    *block_freqs.get_mut(&block_index).ok_or(
+                                        OptimizeError::InvalidBranch(base.as_usize(), block_index),
+                                    )? += 1;
+                                }
+                            }
+                            Op::BrIf => {
+                                let block_index = self.param(base, len, 1)?;
                                 *block_freqs.get_mut(&block_index).ok_or(
                                     OptimizeError::InvalidBranch(base.as_usize(), block_index),
                                 )? += 1;
                             }
-                        }
-                        Op::BrIf => {
-                            let block_index = self.param(base, len, 1)?;
-                            *block_freqs.get_mut(&block_index).ok_or(
-                                OptimizeError::InvalidBranch(base.as_usize(), block_index),
-                            )? += 1;
-                        }
 
-                        _ => {}
+                            _ => {}
+                        }
+                    }
+                }
+
+                {
+                    let mut ci = 0;
+                    while let Ok(base) = self.array_index(CodeIndex(ci)) {
+                        ci += 1;
+                        let (len, opcode) = self.get_op(base)?;
+                        match opcode {
+                            Op::Block | Op::Loop | Op::End => {
+                                let block_index = self.param(base, len, 1)?;
+                                if *block_freqs.get(&block_index).ok_or(
+                                    OptimizeError::InvalidBranch(base.as_usize(), block_index),
+                                )? == 0
+                                {
+                                    self.replace_nop(base)?;
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
 
             {
+                // Reduce unnecessary operations - step 2
                 let mut ci = 0;
+                let mut skip_until_end = false;
                 while let Ok(base) = self.array_index(CodeIndex(ci)) {
                     ci += 1;
-                    let (len, opcode) = self.get_op(base)?;
-                    match opcode {
-                        Op::Block | Op::Loop | Op::End => {
-                            let block_index = self.param(base, len, 1)?;
-                            if *block_freqs
-                                .get(&block_index)
-                                .ok_or(OptimizeError::InvalidBranch(base.as_usize(), block_index))?
-                                == 0
-                            {
-                                self.replace_nop(base)?;
-                            }
+                    let (_len, opcode) = self.get_op(base)?;
+
+                    if skip_until_end {
+                        if opcode != Op::End {
+                            self.replace_nop(base)?;
+                        } else {
+                            skip_until_end = false;
                         }
+                        continue;
+                    }
+
+                    match opcode {
+                        Op::Br | Op::Return | Op::Unreachable => {
+                            skip_until_end = true;
+                        }
+
                         _ => {}
                     }
                 }
             }
-        }
 
-        {
-            // Reduce unnecessary operations - step 2
-            let mut ci = 0;
-            let mut skip_until_end = false;
-            while let Ok(base) = self.array_index(CodeIndex(ci)) {
-                ci += 1;
-                let (_len, opcode) = self.get_op(base)?;
-
-                if skip_until_end {
-                    if opcode != Op::End {
-                        self.replace_nop(base)?;
-                    } else {
-                        skip_until_end = false;
-                    }
-                    continue;
-                }
-
-                match opcode {
-                    Op::Br | Op::Return | Op::Unreachable => {
-                        skip_until_end = true;
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-
-        if true {
-            // rename local vars
-
+            // count local vars
             for item in self.params.iter_mut() {
                 item.read_count = 0;
                 item.write_count = 0;
@@ -453,6 +465,18 @@ impl MinimalCodeOptimizer {
                 }
             }
 
+            // Mark local vars to be removed in the next turn.
+            will_remove_vars.clear();
+            for item in self.locals.iter() {
+                if item.identifier().unwrap_or_default().starts_with("_") || item.read_count > 0 {
+                } else {
+                    will_remove_vars.push(item.index());
+                }
+            }
+        }
+
+        if true {
+            // rename local vars
             let mut var_rename_table = BTreeMap::new();
             let mut new_locals = Vec::with_capacity(self.locals.len());
             for (index, _) in self.params.iter().enumerate() {

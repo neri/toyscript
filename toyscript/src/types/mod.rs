@@ -5,6 +5,7 @@ use ast::{float::Float, integer::Integer, statement::Statement};
 use class::ClassDescriptor;
 use function::FunctionDescriptor;
 use index::{ClassIndex, FuncIndex};
+use keyword::ModifierFlag;
 use string::{StringIndex, StringTable};
 use token::TokenPosition;
 use toyir::{FunctionAssembler, Primitive};
@@ -13,6 +14,7 @@ pub mod class;
 pub mod function;
 pub mod index;
 pub mod string;
+pub mod var;
 // pub mod vtable;
 
 pub const BUILTIN_BOOLEAN: &str = "boolean";
@@ -46,7 +48,7 @@ pub struct TypeSystem {
 }
 
 impl TypeSystem {
-    pub fn new(name: &str, ast: &ast::Ast) -> Result<Self, CompileError> {
+    pub fn new(name: &str, ast: ast::Ast) -> Result<Self, CompileError> {
         let mut system = Self {
             name: name.to_owned(),
             global_names: BTreeMap::new(),
@@ -97,18 +99,22 @@ impl TypeSystem {
 
         system.make_reference(&Identifier::new(BUILTIN_STRING), &system.builtin_void())?;
 
+        let mut main_body = Vec::new();
+        let mut func_decls = Vec::new();
+
         {
             let mut will_waiting_ids = Vec::new();
             let mut waiting_type_list = Vec::new();
             let mut waiting_class_list = Vec::new();
-            let mut last_class_errors = Vec::new();
 
-            for statement in ast.module() {
+            for statement in ast.into_module() {
                 match statement {
+                    Statement::Eof(_) => {}
+
                     Statement::TypeAlias(identifier, type_desc) => {
                         will_waiting_ids.push(identifier.to_string());
 
-                        match system.make_alias(identifier, type_desc) {
+                        match system.make_alias(&identifier, &type_desc) {
                             Ok(_) => (),
                             Err(err) => match err.kind() {
                                 CompileErrorKind::IdentifierNotFound(_) => {
@@ -118,6 +124,7 @@ impl TypeSystem {
                             },
                         }
                     }
+
                     Statement::Class(class_decl) => {
                         will_waiting_ids.push(class_decl.identifier().to_string());
 
@@ -136,9 +143,43 @@ impl TypeSystem {
                             },
                         }
                     }
-                    _ => {}
+
+                    Statement::Function(func_decl) => {
+                        func_decls.push(func_decl);
+                    }
+
+                    Statement::Expression(ref expr) => {
+                        if expr.is_empty() || expr.is_constant() {
+                            // ignored
+                        } else {
+                            main_body.push(statement);
+                        }
+                    }
+
+                    Statement::Block(_)
+                    | Statement::Variable(_)
+                    | Statement::IfStatement(_)
+                    | Statement::ForStatement(_)
+                    | Statement::WhileStatement(_, _)
+                    | Statement::Break(_)
+                    | Statement::Continue(_) => {
+                        main_body.push(statement);
+                    }
+
+                    Statement::ReturnStatement(_expr, position) => {
+                        return Err(CompileError::out_of_context("", position))
+                    }
+
+                    Statement::Enum(_) => {
+                        return Err(CompileError::out_of_context(
+                            format!("{:#?}", statement).as_str(),
+                            TokenPosition::empty(),
+                        ))
+                    }
                 }
             }
+
+            let mut last_class_errors = Vec::new();
 
             // Attempt to resolve forward references
             for _ in 0..8 {
@@ -231,35 +272,43 @@ impl TypeSystem {
             }
         }
 
-        // {
-        //     let func_idx = FuncIndex(0);
-        //     let func = FunctionDescriptor::intrinsic(
-        //         func_idx,
-        //         ModifierFlag::empty(),
-        //         Identifier::new("unreachable"),
-        //         Vec::new(),
-        //         system.builtin_never(),
-        //     );
-        //     system.add_function(func)?;
-        // }
+        // auto main
+        if main_body.len() > 0 {
+            let func = FunctionDescriptor::from_name_and_body(
+                None,
+                function::MAIN_FUNC_NAME,
+                ModifierFlag::EXPORT,
+                main_body,
+                &system,
+                FuncIndex(system.functions.len() as u32),
+            )?;
+            system.add_function(&func).unwrap();
+        }
 
-        for statement in ast.module() {
-            match statement {
-                Statement::Function(func_decl) => {
-                    let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
-                    let func = FunctionDescriptor::parse(
-                        None,
-                        None,
-                        func_decl,
-                        &system,
-                        FuncIndex(system.functions.len() as u32 | hi_bit),
-                    )?;
-                    system
-                        .add_function(&func)
-                        .ok_or(CompileError::duplicate_identifier(func_decl.identifier()))?;
-                }
-                _ => {}
-            }
+        {
+            let func = FunctionDescriptor::instrinc_inline_op(
+                "unreachable",
+                ModifierFlag::empty(),
+                &[],
+                &system.builtin_never(),
+                toyir::Op::Unreachable,
+                FuncIndex(system.functions.len() as u32),
+            )?;
+            system.add_function(&func).unwrap();
+        }
+
+        for func_decl in &func_decls {
+            let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
+            let func = FunctionDescriptor::parse(
+                None,
+                None,
+                func_decl,
+                &system,
+                FuncIndex(system.functions.len() as u32 | hi_bit),
+            )?;
+            system
+                .add_function(&func)
+                .ok_or(CompileError::duplicate_identifier(func_decl.identifier()))?;
         }
 
         let mut classes2 = Vec::new();
@@ -531,31 +580,38 @@ impl TypeSystem {
     }
 
     #[inline]
-    pub fn prefixed_identifier(prefix: Option<&str>, identifier: &str) -> String {
-        if let Some(prefix) = prefix {
-            format!("{}:{}", prefix, identifier)
+    pub fn prefixed_identifier(
+        prefix: Option<&str>,
+        identifier: &str,
+        type_params: &[&str],
+    ) -> String {
+        if type_params.is_empty() {
+            if let Some(prefix) = prefix {
+                format!("{}:{}", prefix, identifier)
+            } else {
+                identifier.to_owned()
+            }
         } else {
-            identifier.to_owned()
+            if let Some(prefix) = prefix {
+                format!("{}:{}:<{}>", prefix, identifier, type_params.join(","))
+            } else {
+                format!("{}:<{}>", identifier, type_params.join(","))
+            }
         }
     }
 
     #[inline]
-    pub fn mangled<'a, T>(
-        prefix: Option<&str>,
-        identifier: &str,
-        _param_types: T,
-        _result_type: &Arc<TypeDescriptor>,
-    ) -> String
-    where
-        T: Iterator<Item = &'a TypeDescriptor>,
-    {
-        let id = Self::prefixed_identifier(prefix, identifier);
-        format!(
-            "${}",
-            id,
-            // param_types.map(|v| v.mangled()).collect::<String>(),
-            // result_type.mangled(),
-        )
+    pub fn mangled(prefix: Option<&str>, identifier: &str, type_params: &[&str]) -> String {
+        Self::mangled2(&Self::prefixed_identifier(prefix, identifier, type_params))
+    }
+
+    #[inline]
+    pub fn mangled2(identifier: &str) -> String {
+        format!("${}", identifier,)
+    }
+
+    pub fn cast_func_identifier(old_type: &str, new_type: &str) -> String {
+        Self::prefixed_identifier(Some(old_type), class::CAST_NAME, &[new_type])
     }
 
     pub fn infer_as(
@@ -696,27 +752,24 @@ impl TypeSystem {
         &self,
         asm: Option<&mut FunctionAssembler>,
         from: &InferredType,
-        to: &InferredType,
+        target: &Arc<TypeDescriptor>,
         position: TokenPosition,
     ) -> Result<bool, CompileError> {
-        let Some(src_type) = from.optimistic_type().and_then(|v| self.resolve(v)) else {
-            return Err(CompileError::could_not_infer2(position));
-        };
-        let Some(dest_type) = to.optimistic_type().and_then(|v| self.resolve(v)) else {
+        let Some(src_type) = from.optimistic_type() else {
             return Err(CompileError::could_not_infer2(position));
         };
 
         let Some(src_type) = src_type.primitive_type().filter(|v| *v != Primitive::Void) else {
             return Err(CompileError::cast_error(
                 src_type.identifier(),
-                dest_type.identifier(),
+                target.identifier(),
                 position,
             ));
         };
-        let Some(dest_type) = dest_type.primitive_type().filter(|v| *v != Primitive::Void) else {
+        let Some(dest_type) = target.primitive_type().filter(|v| *v != Primitive::Void) else {
             return Err(CompileError::cast_error(
                 src_type.as_str(),
-                dest_type.identifier(),
+                target.identifier(),
                 position,
             ));
         };
@@ -743,6 +796,11 @@ impl TypeSystem {
         self.global_names.get(&identifier.to_string()).map(|v| *v)
     }
 
+    #[inline]
+    pub fn functions(&self) -> &[Arc<FunctionDescriptor>] {
+        &self.functions
+    }
+
     pub fn function(&self, identifier: &str) -> Option<&Arc<FunctionDescriptor>> {
         let index = match self.global_name(identifier)? {
             GlobalNameIndex::Function(v) => v,
@@ -754,6 +812,11 @@ impl TypeSystem {
             }
         }
         None
+    }
+
+    #[inline]
+    pub fn classes(&self) -> &[Arc<ClassDescriptor>] {
+        &self.classes
     }
 
     pub fn class(&self, identifier: &str) -> Option<&Arc<ClassDescriptor>> {

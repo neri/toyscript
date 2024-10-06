@@ -20,7 +20,7 @@ pub enum Statement {
     /// `{` statement... `}`
     Block(Block),
 
-    /// `function`
+    /// Function Declaration
     Function(Arc<FunctionDeclaration>),
 
     /// Variable Declaration
@@ -45,7 +45,7 @@ pub enum Statement {
     WhileStatement(Expression, Block),
 
     /// `return` expr
-    ReturnStatement(Expression),
+    ReturnStatement(Expression, TokenPosition),
 
     /// expression
     Expression(Expression),
@@ -66,10 +66,10 @@ pub enum IfType {
 
 #[derive(Debug)]
 pub struct ForStatement {
-    pub(crate) init: ForInit,
-    pub(crate) cond: Expression,
-    pub(crate) step: Expression,
-    pub(crate) block: Block,
+    pub init: ForInit,
+    pub cond: Expression,
+    pub step: Expression,
+    pub block: Block,
 }
 
 #[derive(Debug)]
@@ -240,13 +240,21 @@ impl Statement {
                             }
 
                             if expect_eol(tokens).is_ok() {
-                                return Ok(Self::ReturnStatement(Expression::empty_with_position(
+                                return Ok(Self::ReturnStatement(
+                                    Expression::empty_with_position(TokenPosition::new_at(
+                                        token.position().end(),
+                                    )),
                                     token.position(),
-                                )));
+                                ));
                             } else {
+                                let position_start = token.position().start();
                                 let expr: Expression = Expression::parse(tokens, None)?;
+                                let position_end = expr.position().end();
                                 expect_eol(tokens)?;
-                                return Ok(Self::ReturnStatement(expr));
+                                return Ok(Self::ReturnStatement(
+                                    expr,
+                                    TokenPosition::new(position_start as u32, position_end as u32),
+                                ));
                             }
                         }
                         Keyword::If => {

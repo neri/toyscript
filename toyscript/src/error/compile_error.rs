@@ -158,10 +158,14 @@ impl CompileError {
 
     #[inline]
     pub fn out_of_context(explanation: &str, position: TokenPosition) -> Self {
-        let explanation = format!(
-            "This statement cannot be used in the current context: {}",
-            explanation
-        );
+        let explanation = if explanation.is_empty() {
+            format!("This statement cannot be used in the current context")
+        } else {
+            format!(
+                "This statement cannot be used in the current context: {}",
+                explanation
+            )
+        };
         Self::with_position(CompileErrorKind::SyntaxError, position, Some(explanation))
     }
 

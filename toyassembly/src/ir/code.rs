@@ -21,7 +21,7 @@ impl Codes {
             writer.write(self.0.len())?;
             for item in self.0.iter() {
                 match item.content {
-                    Code::Source(_) | Code::ToyIr(_) => panic!("panics"),
+                    Code::ToyIr(_) => panic!("panics"),
                     Code::Binary(ref bin) => {
                         writer.write_blob(bin.as_bytes())?;
                     }

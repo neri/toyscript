@@ -5,7 +5,6 @@
 use crate::types::ValType;
 
 /// WebAssembly opcodes
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WasmOpcode {
     /// 0x00 `unreachable`

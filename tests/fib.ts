@@ -1,18 +1,16 @@
 
-function main() {
-    for (let i = 0; i <= 10; i++) {
-        putchar('f')
-        putchar('i')
-        putchar('b')
-        putchar('(')
-        print_num(i)
-        putchar(')')
-        putchar(' ')
-        putchar('=')
-        putchar(' ')
-        print_num(fib(i))
-        putchar('\n')
-    }
+for (let i = 0; i <= 10; i++) {
+    putchar('f')
+    putchar('i')
+    putchar('b')
+    putchar('(')
+    print_num(i)
+    putchar(')')
+    putchar(' ')
+    putchar('=')
+    putchar(' ')
+    print_num(fib(i))
+    putchar('\n')
 }
 
 function fib(n: int): int {

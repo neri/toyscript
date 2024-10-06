@@ -28,6 +28,11 @@ impl Ast {
         &self.items
     }
 
+    #[inline]
+    pub fn into_module(self) -> Vec<Statement> {
+        self.items
+    }
+
     pub fn from_tokens(tokens: &mut TokenStream<Keyword>) -> Result<Ast, CompileError> {
         let mut statements = Vec::new();
 
@@ -44,6 +49,6 @@ impl Ast {
 
 impl core::fmt::Debug for Ast {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Module: {:#?}", self.items)
+        write!(f, "Ast: {:#?}", self.items)
     }
 }

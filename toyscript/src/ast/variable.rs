@@ -30,6 +30,7 @@ impl VariableDeclaration {
         ending_tokens: Option<&[TokenType<Keyword>]>,
     ) -> Result<Self, CompileError> {
         let allowed_ending = ending_tokens.unwrap_or(&[
+            TokenType::Eof,
             TokenType::NewLine,
             TokenType::Symbol(','),
             TokenType::Symbol(';'),

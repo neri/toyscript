@@ -1,6 +1,6 @@
 Mnemonic,Kind,
-unreachable,control,
-nop,control,
+unreachable,no_param,
+nop,no_param,
 ,,
 block,block,
 loop,block,

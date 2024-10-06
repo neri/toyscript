@@ -1,15 +1,17 @@
 use super::keyword::ModifierFlag;
 use crate::*;
 use ast::{class::ClassDeclaration, expression::Expression};
-use cg::scope::VariableDescriptor;
 use toyir::LocalIndex;
 use types::{
     function::FunctionDescriptor,
     index::{ClassIndex, FuncIndex},
+    var::VariableDescriptor,
     TypeDescriptor,
 };
 
 pub const CTOR_NAME: &str = ".ctor";
+
+pub const CAST_NAME: &str = ".cast";
 
 #[derive(Debug)]
 pub struct ClassDescriptor {

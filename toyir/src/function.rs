@@ -359,6 +359,13 @@ impl FunctionAssembler<'_> {
         Ok(())
     }
 
+    /// Parameter independent instructions
+    #[inline]
+    pub fn emit_independent(&mut self, op: Op) -> Result<(), AssembleError> {
+        self.emit(op, &[]);
+        Ok(())
+    }
+
     /// %block = block
     #[inline]
     pub fn ir_block(&mut self) -> BlockIndex {
@@ -820,6 +827,42 @@ impl core::fmt::Debug for CodeFragment<'_> {
                     }
                 }
                 write!(f, ")")
+            }
+            Op::Br | Op::End => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ {} %{}",
+                    len, self.opcode as usize, self.opcode, self.params[0],
+                )
+            }
+            Op::Block | Op::Loop => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ %{} = {}",
+                    len, self.opcode as usize, self.params[0], self.opcode,
+                )
+            }
+            Op::BrIf => {
+                write!(
+                    f,
+                    "/* {:04x} {:04x} */ {} %{}, %{}",
+                    len, self.opcode as usize, self.opcode, self.params[0], self.params[1],
+                )
+            }
+            Op::Return => {
+                if len > 0 {
+                    write!(
+                        f,
+                        "/* {:04x} {:04x} */ {} %{}",
+                        len, self.opcode as usize, self.opcode, self.params[0],
+                    )
+                } else {
+                    write!(
+                        f,
+                        "/* {:04x} {:04x} */ {}",
+                        len, self.opcode as usize, self.opcode,
+                    )
+                }
             }
             _ => match self.opcode.class() {
                 OpClass::UnOp => {

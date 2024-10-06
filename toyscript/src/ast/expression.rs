@@ -50,6 +50,9 @@ pub enum Unary {
     /// identifier `.` identifier
     Member(Box<Unary>, Identifier),
 
+    /// identifier `?.` identifier
+    OptionalChain(Box<Unary>, Identifier),
+
     /// Invoke - (expression) `(` expression, ...`)`
     Invoke(Box<Unary>, Box<[Expression]>),
 
@@ -78,6 +81,8 @@ pub enum FlatUnary {
 
     Member(Identifier),
 
+    OptionalChain(Identifier),
+
     Assertion(TypeDeclaration, TokenPosition),
 
     New(TypeDeclaration, Box<[Expression]>, TokenPosition),
@@ -96,7 +101,8 @@ macro_rules! ending_mode {
 }
 
 impl Expression {
-    const DEFAULT_ENDING: [TokenType<Keyword>; 3] = [
+    const DEFAULT_ENDING: [TokenType<Keyword>; 4] = [
+        TokenType::Eof,
         TokenType::NewLine,
         TokenType::Symbol(';'),
         TokenType::Symbol('}'),
@@ -333,6 +339,13 @@ impl Expression {
             if tokens.expect_symbol('.').is_ok() {
                 let identifier = Identifier::from_tokens(tokens)?;
                 items.push(FlatUnary::Member(identifier));
+            } else if tokens.expect_symbol('?').is_ok() {
+                if tokens.expect_immed_symbol('.').is_ok() {
+                    let identifier = Identifier::from_tokens(tokens)?;
+                    items.push(FlatUnary::OptionalChain(identifier));
+                } else {
+                    return Err(CompileError::unexpected_token(&tokens.next_non_blank()));
+                }
             } else if tokens.expect_symbol('[').is_ok() {
                 let expr = Expression::parse(tokens, ending_mode!(']'))?;
                 expect_symbol(tokens, ']')?;
@@ -478,6 +491,13 @@ impl Expression {
                     items.push(Unary::Member(Box::new(value), identifier));
                 }
 
+                FlatUnary::OptionalChain(identifier) => {
+                    let value = items
+                        .pop()
+                        .ok_or(CompileError::out_of_value_stack(identifier.id_position()))?;
+                    items.push(Unary::OptionalChain(Box::new(value), identifier));
+                }
+
                 FlatUnary::Binary(op, position) => {
                     let rhs = items
                         .pop()
@@ -600,6 +620,11 @@ impl core::fmt::Debug for Unary {
             }
             Self::Invoke(arg0, arg1) => f.debug_tuple("Invoke").field(arg0).field(arg1).finish(),
             Self::Member(arg0, arg1) => f.debug_tuple("Member").field(arg0).field(arg1).finish(),
+            Self::OptionalChain(arg0, arg1) => f
+                .debug_tuple("OptionalChain")
+                .field(arg0)
+                .field(arg1)
+                .finish(),
             Self::Constant(arg0, _) => write!(f, "{:#?}", arg0),
             Self::Unary(op, _, value) => f.debug_tuple(&format!("{:?}", op)).field(value).finish(),
             Self::NumericLiteral(arg0, _) => f.debug_tuple("NumericLiteral").field(arg0).finish(),
@@ -646,9 +671,9 @@ impl Unary {
                 }
             }
 
-            Unary::Identifier(identifier) | Unary::Member(_, identifier) => {
-                identifier.id_position()
-            }
+            Unary::Identifier(identifier)
+            | Unary::Member(_, identifier)
+            | Unary::OptionalChain(_, identifier) => identifier.id_position(),
         }
     }
 

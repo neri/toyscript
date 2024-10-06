@@ -1,7 +1,6 @@
 use crate::*;
-use ast::table::RefType;
 use core::num::NonZeroU32;
-use ir::{index::*, types::IdType, Module, WasmSectionId};
+use ir::WasmSectionId;
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
 
 #[derive(Default)]
@@ -15,27 +14,6 @@ pub struct Table {
 }
 
 impl Tables {
-    pub(super) fn convert(
-        module: &mut Module,
-        tables: Vec<ast::table::Table>,
-    ) -> Result<(), AssembleError> {
-        for ast_table in tables {
-            if let Some(id) = ast_table.id() {
-                let tableidx = TableIndex(module.tables.0.len() as u32);
-                module.register_ast_name(id, IdType::Table(tableidx))?;
-            }
-
-            let table = Table {
-                min: ast_table.min(),
-                max: ast_table.max(),
-                reftype: ast_table.reftype(),
-            };
-            module.tables.0.push(table);
-        }
-
-        Ok(())
-    }
-
     pub fn write_to_wasm(&self, writer: &mut Leb128Writer) -> Result<WasmSectionId, WriteError> {
         if self.0.len() > 0 {
             writer.write(self.0.len())?;
@@ -58,5 +36,21 @@ impl Tables {
 impl core::fmt::Debug for Tables {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_list().entries(&self.0).finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefType {
+    FuncRef,
+    ExternRef,
+}
+
+impl RefType {
+    #[inline]
+    pub fn write_to_wasm(&self, writer: &mut Leb128Writer) -> Result<(), WriteError> {
+        match self {
+            RefType::FuncRef => writer.write_byte(0x70),
+            RefType::ExternRef => writer.write_byte(0x6F),
+        }
     }
 }

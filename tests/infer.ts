@@ -1,13 +1,12 @@
-export function infer() {
-    let a: int, b, c
-    a = b + c
 
-    let d, e: uint, f
-    d = e + f
+let a: int, b, c
+a = b + c
 
-    let g, h, i: usize
-    g = h + i
+let d, e: uint, f
+d = e + f
 
-    let j: isize, k: isize, l: isize
-    j = k + l
-}
+let g, h, i: usize
+g = h + i
+
+let j: isize, k: isize, l: isize
+j = k + l

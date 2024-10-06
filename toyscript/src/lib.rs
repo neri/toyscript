@@ -38,8 +38,8 @@ impl ToyScript {
     pub fn compile(file_name: &str, src: Vec<u8>) -> Result<Vec<u8>, String> {
         let ir_module = Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
-            let types = TypeSystem::new(file_name, &ast)?;
-            let ir_module = cg::CodeGen::generate(&ast, &types)?;
+            let types = TypeSystem::new(file_name, ast)?;
+            let ir_module = cg::CodeGen::generate(&types)?;
             Ok(ir_module)
         })?;
 
@@ -77,7 +77,7 @@ impl ToyScript {
         Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
 
-            let types = TypeSystem::new(file_name, &ast)?;
+            let types = TypeSystem::new(file_name, ast)?;
 
             Ok(types)
         })
@@ -88,9 +88,9 @@ impl ToyScript {
         Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
 
-            let types = TypeSystem::new(file_name, &ast)?;
+            let types = TypeSystem::new(file_name, ast)?;
 
-            let ir_module = cg::CodeGen::generate(&ast, &types)?;
+            let ir_module = cg::CodeGen::generate(&types)?;
 
             Ok(ir_module)
         })
@@ -100,8 +100,8 @@ impl ToyScript {
     pub fn explain_wasm_ir(file_name: &str, src: Vec<u8>) -> Result<String, String> {
         let ir_module = Self::_from_src(file_name, src, |tokens| {
             let ast = Ast::from_tokens(tokens)?;
-            let types = TypeSystem::new(file_name, &ast)?;
-            let ir_module = cg::CodeGen::generate(&ast, &types)?;
+            let types = TypeSystem::new(file_name, ast)?;
+            let ir_module = cg::CodeGen::generate(&types)?;
             Ok(ir_module)
         })?;
 
@@ -135,10 +135,12 @@ pub(crate) fn try_expect_eol(
     loop {
         if let Some(token) = tokens.peek() {
             match token.token_type() {
-                TokenType::NewLine | TokenType::Symbol(';') => {
+                TokenType::Eof
+                | TokenType::NewLine
+                | TokenType::Symbol(';')
+                | TokenType::Symbol('}') => {
                     return Ok(token);
                 }
-                TokenType::Symbol('}') => return Ok(token),
                 TokenType::LineComment | TokenType::BlockComment => {
                     tokens.shift();
                     continue;
@@ -157,7 +159,7 @@ pub(crate) fn expect_eol(tokens: &mut TokenStream<Keyword>) -> Result<(), Compil
         TokenType::NewLine | TokenType::Symbol(';') => {
             tokens.shift();
         }
-        TokenType::Symbol('}') => (),
+        TokenType::Eof | TokenType::Symbol('}') => (),
         _ => (),
     })
 }

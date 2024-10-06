@@ -1,5 +1,5 @@
 use crate::*;
-use ir::{Module, WasmSectionId};
+use ir::WasmSectionId;
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
 use wasm::expr::ConstExpr;
 
@@ -12,22 +12,6 @@ pub struct Data {
 }
 
 impl DataSegments {
-    pub(super) fn convert(
-        module: &mut Module,
-        data_segments: Vec<ast::data::Data>,
-    ) -> Result<(), AssembleError> {
-        for data in data_segments {
-            let ast::data::Data {
-                mem_use: _,
-                offset,
-                bytes,
-            } = data;
-
-            module.data_segs.0.push(Data { offset, bytes });
-        }
-        Ok(())
-    }
-
     pub fn write_to_wasm(&self, writer: &mut Leb128Writer) -> Result<WasmSectionId, WriteError> {
         if self.0.len() > 0 {
             writer.write(self.0.len())?;

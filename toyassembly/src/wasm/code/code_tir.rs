@@ -14,7 +14,7 @@ pub(super) struct FromToyIR;
 
 impl FromToyIR {
     /// Perform assembly from toyir
-    pub fn assemble(
+    pub(super) fn assemble(
         src: &[u32],
         module: &Module,
         results: &[ValType],

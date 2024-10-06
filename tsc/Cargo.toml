@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 toyscript = { path = "../toyscript" }
-toyassembly = { path = "../toyassembly" }

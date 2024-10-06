@@ -3,8 +3,6 @@
         "./Cargo.toml",
         "./lib/leb128/Cargo.toml",
         "./lib/token/Cargo.toml",
-        "./tas/Cargo.toml",
-        "./toyassembly/Cargo.toml",
         "./toyir/Cargo.toml",
         "./toyscript/Cargo.toml",
         "./tsc/Cargo.toml",

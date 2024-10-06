@@ -1,6 +1,6 @@
 use crate::*;
 use core::num::NonZeroU32;
-use ir::{index::*, types::IdType, Module, WasmSectionId};
+use ir::{Module, WasmSectionId};
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
 
 #[derive(Default)]
@@ -13,26 +13,6 @@ pub struct Memory {
 }
 
 impl Memories {
-    pub(super) fn convert(
-        module: &mut Module,
-        memories: Vec<ast::memory::Memory>,
-    ) -> Result<(), AssembleError> {
-        for ast_memory in memories {
-            if let Some(id) = ast_memory.id() {
-                let memidx = MemoryIndex(module.memories.0.len() as u32);
-                module.register_ast_name(id, IdType::Memory(memidx))?;
-            }
-
-            let memory = Memory {
-                min: ast_memory.min(),
-                max: ast_memory.max(),
-            };
-            module.memories.0.push(memory);
-        }
-
-        Ok(())
-    }
-
     pub(super) fn process_tir(module: &mut Module) -> Result<(), AssembleError> {
         // default memory
         if module.memories.0.len() == 0 {

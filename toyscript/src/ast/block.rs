@@ -5,7 +5,7 @@ use crate::*;
 use token::{Token, TokenPosition, TokenStream};
 
 pub struct Block {
-    statements: Box<[Statement]>,
+    statements: Arc<[Statement]>,
     position: TokenPosition,
 }
 
@@ -13,7 +13,7 @@ impl Block {
     #[inline]
     pub fn empty() -> Self {
         Self {
-            statements: Box::new([]),
+            statements: Arc::new([]),
             position: TokenPosition::empty(),
         }
     }
@@ -26,7 +26,7 @@ impl Block {
 
         if let Ok(token) = tokens.expect_symbol('}') {
             return Ok(Self {
-                statements: Vec::new().into_boxed_slice(),
+                statements: Arc::from(Vec::new().into_boxed_slice()),
                 position: start_token.position().merged(&token.position()),
             });
         }
@@ -68,14 +68,23 @@ impl Block {
             .position()
             .merged(&tokens.peek_last().unwrap().position());
 
-        return Ok(Self {
-            statements: statements.into_boxed_slice(),
+        Ok(Self {
+            statements: Arc::from(statements.into_boxed_slice()),
             position,
-        });
+        })
     }
 
     #[inline]
-    pub fn statements(&self) -> &[Statement] {
+    pub fn from_statements(statements: Vec<Statement>) -> Self {
+        Self {
+            statements: Arc::from(statements.into_boxed_slice()),
+            // TODO:
+            position: TokenPosition::empty(),
+        }
+    }
+
+    #[inline]
+    pub fn statements(&self) -> &Arc<[Statement]> {
         &self.statements
     }
 
@@ -87,6 +96,15 @@ impl Block {
 
 impl core::fmt::Debug for Block {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_list().entries(&self.statements).finish()
+        f.debug_list().entries(self.statements.as_ref()).finish()
+    }
+}
+
+impl Clone for Block {
+    fn clone(&self) -> Self {
+        Self {
+            statements: self.statements.clone(),
+            position: self.position.clone(),
+        }
     }
 }

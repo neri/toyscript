@@ -1,5 +1,5 @@
 use crate::*;
-use ir::{index::*, Module, WasmSectionId};
+use ir::{index::*, WasmSectionId};
 use leb128::{Leb128Writer, WriteError, WriteLeb128};
 
 #[derive(Default)]
@@ -20,28 +20,6 @@ pub enum ExportDesc {
 }
 
 impl Exports {
-    pub(super) fn convert(
-        module: &mut Module,
-        exports: Vec<ast::export::Export>,
-    ) -> Result<(), AssembleError> {
-        for ast_export in exports {
-            let name = ast_export.name();
-            let desc = match ast_export.desc() {
-                ast::export::ExportDescriptor::Func(func) => {
-                    let funcidx = module.get_funcidx(&func.0)?;
-                    ExportDesc::Func(funcidx)
-                }
-                // ast::export::ExportDescriptor::Table(_) => todo!(),
-                // ast::export::ExportDescriptor::Memory(_) => todo!(),
-                // ast::export::ExportDescriptor::Global(_) => todo!(),
-                _ => continue,
-            };
-            module.exports.export(name, desc)?;
-        }
-
-        Ok(())
-    }
-
     pub fn write_to_wasm(&self, writer: &mut Leb128Writer) -> Result<WasmSectionId, WriteError> {
         if self.0.len() > 0 {
             writer.write(self.0.len())?;

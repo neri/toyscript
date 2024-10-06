@@ -557,7 +557,6 @@ fn make_irop(src_path: &str, dest_path: &str, class_name: &str, comment: &str) {
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// {comment}
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum {class_name} {{
 "
@@ -691,7 +690,6 @@ impl core::fmt::Debug for {class_name} {{
     }}
 }}
 
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum {kind_class_name} {{
 "

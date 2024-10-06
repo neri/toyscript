@@ -3,7 +3,6 @@
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// ToyAssembly Value Types
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ValType {
     /// "f32"

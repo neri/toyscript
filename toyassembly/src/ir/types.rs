@@ -95,14 +95,6 @@ impl Type {
     }
 
     #[inline]
-    pub fn from_ast(params: &[ast::types::IdAndValtype], results: &[ValType]) -> Self {
-        Self::from_iter(
-            params.iter().map(|v| v.valtype()),
-            results.iter().map(|v| *v),
-        )
-    }
-
-    #[inline]
     pub fn params(&self) -> &[ValType] {
         &self.params
     }

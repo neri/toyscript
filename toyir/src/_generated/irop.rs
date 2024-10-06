@@ -3,7 +3,6 @@
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// ToyScript Intermediate Representation Opcodes
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Op {
     /// "add"
@@ -369,7 +368,7 @@ impl Op {
             Self::Mul => OpClass::BinOp,
             Self::Ne => OpClass::Cmp,
             Self::Neg => OpClass::UnOp,
-            Self::Nop => OpClass::Control,
+            Self::Nop => OpClass::NoParam,
             Self::Not => OpClass::UnOp,
             Self::Or => OpClass::BinOp,
             Self::RemS => OpClass::BinOp,
@@ -380,7 +379,7 @@ impl Op {
             Self::ShrU => OpClass::BinOp,
             Self::Sub => OpClass::BinOp,
             Self::UnaryNop => OpClass::Control,
-            Self::Unreachable => OpClass::Control,
+            Self::Unreachable => OpClass::NoParam,
             Self::Xor => OpClass::BinOp,
         }
     }
@@ -399,11 +398,11 @@ impl core::fmt::Debug for Op {
     }
 }
 
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum OpClass {
-    Control,
+    NoParam,
     Block,
+    Control,
     Const,
     Local,
     UnOp,

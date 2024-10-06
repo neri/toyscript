@@ -24,16 +24,8 @@ fn main() {
             }
         }
         let mut os = File::create("./src/_generated/opcode.rs").unwrap();
-        let opcodes = make_opcode(&mut os, lines.as_slice());
+        let _opcodes = make_opcode(&mut os, lines.as_slice());
         println!("cargo:rerun-if-changed=./src/wasm/opcode.csv");
-
-        make_enum(
-            "./src/misc/keyword.txt",
-            "./src/_generated/keyword.rs",
-            "Keyword",
-            "ToyAssembly Reserved Keywords",
-            &opcodes,
-        );
     }
 }
 
@@ -66,7 +58,6 @@ fn make_enum(
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
 /// {comment}
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum {class_name} {{
 "
@@ -304,7 +295,6 @@ fn make_opcode(os: &mut File, lines: &[String]) -> Vec<String> {
 use crate::types::ValType;
 
 /// WebAssembly opcodes
-#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WasmOpcode {{
 "
