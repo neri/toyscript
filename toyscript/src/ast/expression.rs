@@ -1,8 +1,9 @@
 //! Expressions
 
-use super::Identifier;
 use crate::{keyword::Keyword, *};
-use ast::{class::TypeDeclaration, float::Float, integer::Integer};
+use ast::{
+    class::TypeDeclaration, float::Float, integer::Integer, typeparam::TypeParameter, Identifier,
+};
 use core::ops::ControlFlow;
 use token::{QuoteType, StringLiteralError, TokenPosition, TokenStream};
 
@@ -57,7 +58,7 @@ pub enum Unary {
     Invoke(Box<Unary>, Box<[Expression]>),
 
     /// unary as a type
-    Assertion(Box<Unary>, Box<TypeDeclaration>, TokenPosition),
+    TypeAssertion(Box<Unary>, Box<TypeDeclaration>, TokenPosition),
 
     /// new Class
     New(Box<TypeDeclaration>, Box<[Expression]>, TokenPosition),
@@ -83,7 +84,7 @@ pub enum FlatUnary {
 
     OptionalChain(Identifier),
 
-    Assertion(TypeDeclaration, TokenPosition),
+    TypeAssertion(TypeDeclaration, TokenPosition),
 
     New(TypeDeclaration, Box<[Expression]>, TokenPosition),
 }
@@ -151,8 +152,9 @@ impl Expression {
     pub fn parse(
         tokens: &mut TokenStream<Keyword>,
         allowed_ending: Option<&[TokenType<Keyword>]>,
+        type_params: &[TypeParameter],
     ) -> Result<Self, CompileError> {
-        Self::_parse_unary(tokens, allowed_ending, true)
+        Self::_parse_unary(tokens, allowed_ending, true, type_params)
             .and_then(|(items, position)| Self::finalize(items, position))
     }
 
@@ -177,6 +179,7 @@ impl Expression {
         tokens: &mut TokenStream<Keyword>,
         allowed_ending: Option<&[TokenType<Keyword>]>,
         allow_binary: bool,
+        type_params: &[TypeParameter],
     ) -> Result<(Vec<FlatUnary>, TokenPosition), CompileError> {
         let ending_tokens = allowed_ending.unwrap_or(&Self::DEFAULT_ENDING);
 
@@ -197,7 +200,7 @@ impl Expression {
         if let Some(token) = tokens.shift() {
             match token.token_type() {
                 TokenType::Symbol('(') => {
-                    let expr = Self::parse(tokens, ending_mode!(')'))?;
+                    let expr = Self::parse(tokens, ending_mode!(')'), type_params)?;
                     expect_symbol(tokens, ')')?;
                     items.push(FlatUnary::Parenthesis(expr));
                 }
@@ -288,7 +291,7 @@ impl Expression {
                         match keyword {
                             Keyword::New => {
                                 let position = tokens.peek_last().unwrap().position();
-                                let target = TypeDeclaration::expect(tokens)?;
+                                let target = TypeDeclaration::expect(tokens, type_params)?;
 
                                 expect_symbol(tokens, '(')?;
                                 let mut params = Vec::new();
@@ -297,7 +300,11 @@ impl Expression {
                                         break;
                                     }
 
-                                    let expr = Expression::parse(tokens, ending_mode!(',', ')'))?;
+                                    let expr = Expression::parse(
+                                        tokens,
+                                        ending_mode!(',', ')'),
+                                        type_params,
+                                    )?;
                                     params.push(expr);
 
                                     let _ = tokens.expect_symbol(',');
@@ -328,7 +335,7 @@ impl Expression {
                     let position = token.position();
                     let op = UnaryOperator::parse_prefix(token, tokens)?;
                     let position = position.merged(&tokens.peek_last().unwrap().position());
-                    let (trails, _) = Self::_parse_unary(tokens, Some(&[]), false)?;
+                    let (trails, _) = Self::_parse_unary(tokens, Some(&[]), false, type_params)?;
                     items.extend(trails);
                     items.push(FlatUnary::Unary(op, position));
                 }
@@ -347,7 +354,7 @@ impl Expression {
                     return Err(CompileError::unexpected_token(&tokens.next_non_blank()));
                 }
             } else if tokens.expect_symbol('[').is_ok() {
-                let expr = Expression::parse(tokens, ending_mode!(']'))?;
+                let expr = Expression::parse(tokens, ending_mode!(']'), type_params)?;
                 expect_symbol(tokens, ']')?;
                 items.push(FlatUnary::Subscript(expr));
             } else if tokens.expect_symbol('(').is_ok() {
@@ -357,7 +364,7 @@ impl Expression {
                         break;
                     }
 
-                    let expr = Expression::parse(tokens, ending_mode!(',', ')'))?;
+                    let expr = Expression::parse(tokens, ending_mode!(',', ')'), type_params)?;
                     params.push(expr);
 
                     let _ = tokens.expect_symbol(',');
@@ -365,8 +372,8 @@ impl Expression {
                 items.push(FlatUnary::Invoke(params.into_boxed_slice()));
             } else if tokens.expect_keyword(Keyword::As).is_ok() {
                 let position = tokens.peek_last().unwrap().position();
-                let target = TypeDeclaration::expect(tokens)?;
-                items.push(FlatUnary::Assertion(target, position));
+                let target = TypeDeclaration::expect(tokens, type_params)?;
+                items.push(FlatUnary::TypeAssertion(target, position));
             } else {
                 break;
             }
@@ -397,7 +404,7 @@ impl Expression {
                 }
             }) {
                 items.push(FlatUnary::Binary(binop, position));
-                let (trails, _) = Self::_parse_unary(tokens, allowed_ending, true)?;
+                let (trails, _) = Self::_parse_unary(tokens, allowed_ending, true, type_params)?;
                 items.extend(trails);
             }
         }
@@ -516,11 +523,11 @@ impl Expression {
                     items.push(Unary::Invoke(Box::new(caller), params));
                 }
 
-                FlatUnary::Assertion(type_desc, position) => {
+                FlatUnary::TypeAssertion(type_desc, position) => {
                     let value = items
                         .pop()
                         .ok_or(CompileError::out_of_value_stack(position))?;
-                    items.push(Unary::Assertion(
+                    items.push(Unary::TypeAssertion(
                         Box::new(value),
                         Box::new(type_desc),
                         position,
@@ -639,7 +646,7 @@ impl core::fmt::Debug for Unary {
                 .field(rhs)
                 .finish(),
             Self::Identifier(identifier) => write!(f, "Identifier({:?})", identifier.as_str()),
-            Self::Assertion(arg0, arg1, _) => {
+            Self::TypeAssertion(arg0, arg1, _) => {
                 f.debug_tuple("Assertion").field(arg0).field(arg1).finish()
             }
             Self::New(arg0, arg1, _) => f.debug_tuple("New").field(arg0).field(arg1).finish(),
@@ -658,7 +665,7 @@ impl Unary {
             | Unary::StringLiteral(_, position)
             | Unary::CharLiteral(_, position)
             | Unary::Binary(_, position, _, _)
-            | Unary::Assertion(_, _, position)
+            | Unary::TypeAssertion(_, _, position)
             | Unary::New(_, _, position) => *position,
 
             Unary::Parenthesis(expr) | Unary::Subscript(_, expr) => expr.position(),

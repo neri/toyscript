@@ -1,7 +1,7 @@
 //! Block of Statements
 
-use super::statement::Statement;
 use crate::*;
+use ast::{statement::Statement, typeparam::TypeParameter};
 use token::{Token, TokenPosition, TokenStream};
 
 pub struct Block {
@@ -21,6 +21,7 @@ impl Block {
     pub fn parse(
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
+        type_params: &[TypeParameter],
     ) -> Result<Self, CompileError> {
         let start_token = decisive_token;
 
@@ -43,7 +44,7 @@ impl Block {
                 Ok(token) => match token.token_type() {
                     TokenType::Symbol(';') => continue,
                     TokenType::Symbol('{') => {
-                        let block = Block::parse(token, tokens)?;
+                        let block = Block::parse(token, tokens, type_params)?;
                         statements.push(Statement::Block(block));
                     }
                     TokenType::Symbol('}') => {
@@ -58,7 +59,7 @@ impl Block {
                     _ => unreachable!(),
                 },
                 Err(_) => {
-                    let statement = Statement::parse(tokens)?;
+                    let statement = Statement::parse(tokens, type_params)?;
                     statements.push(statement);
                 }
             }

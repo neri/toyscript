@@ -333,7 +333,7 @@ impl CompileError {
     }
 
     #[inline]
-    pub fn todo(message: Option<String>, position: TokenPosition) -> Self {
+    pub fn todo(message: Option<String>, position: ErrorPosition) -> Self {
         let explanation = if let Some(message) = message {
             format!("Not yet implemented: {}", message)
         } else {
@@ -343,7 +343,7 @@ impl CompileError {
         Self {
             kind: CompileErrorKind::InternalError,
             explanation: Some(explanation),
-            position: ErrorPosition::Range(position),
+            position: position,
         }
     }
 

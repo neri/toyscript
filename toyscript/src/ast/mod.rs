@@ -12,10 +12,10 @@ pub mod statement;
 pub mod typeparam;
 pub mod variable;
 
-use self::statement::Statement;
-use crate::keyword::Keyword;
 use crate::*;
-use token::{Token, TokenPosition, TokenStream};
+use keyword::Keyword;
+use statement::Statement;
+use token::TokenStream;
 
 /// ToyScript Abstract Syntax Tree
 pub struct Ast {
@@ -37,7 +37,7 @@ impl Ast {
         let mut statements = Vec::new();
 
         loop {
-            match Statement::parse(tokens)? {
+            match Statement::parse(tokens, &[])? {
                 Statement::Eof(_) => break,
                 statement => statements.push(statement),
             }

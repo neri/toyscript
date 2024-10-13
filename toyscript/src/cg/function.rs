@@ -14,7 +14,7 @@ use toyir::{self, FuncTempIndex, Primitive};
 use types::{
     function::{FunctionBody, FunctionDescriptor},
     var::VariableDescriptor,
-    InferredType, Resolve, TypeDescriptor,
+    InferredType, ResolvePrimitive, TypeDescriptor,
 };
 
 pub struct FunctionGenerator;
@@ -520,7 +520,7 @@ impl FunctionGenerator {
                 ))
             }
 
-            Unary::Assertion(ref value, ref type_desc, position) => {
+            Unary::TypeAssertion(ref value, ref type_desc, position) => {
                 let target = scope
                     .types()
                     .get(&type_desc.identifier().to_string())
@@ -534,7 +534,7 @@ impl FunctionGenerator {
                     .try_convert_type(None, &src_type, &target, *position)?;
 
                 Ok((
-                    Unary::Assertion(Box::new(value), type_desc.clone(), *position),
+                    Unary::TypeAssertion(Box::new(value), type_desc.clone(), *position),
                     InferredType::Inferred(target),
                 ))
             }
@@ -609,7 +609,7 @@ impl FunctionGenerator {
                     ))
                 }
 
-                BinaryOperator::Exponentiation => Err(CompileError::todo(None, *position)),
+                BinaryOperator::Exponentiation => Err(CompileError::todo(None, (*position).into())),
             },
 
             Unary::Unary(op, position, ref value) => match op {
@@ -650,14 +650,14 @@ impl FunctionGenerator {
                 }
 
                 UnaryOperator::Ref | UnaryOperator::Deref => {
-                    Err(CompileError::todo(None, *position))
+                    Err(CompileError::todo(None, (*position).into()))
                 }
             },
 
             Unary::Invoke(callee, _args) => {
                 let identifier = match callee.as_ref() {
                     Unary::Identifier(v) => Ok(v),
-                    _ => Err(CompileError::todo(None, callee.position())),
+                    _ => Err(CompileError::todo(None, callee.position().into())),
                 }?;
 
                 let func_desc = scope
@@ -697,7 +697,7 @@ impl FunctionGenerator {
 
             Unary::Subscript(_, _) | Unary::Member(_, _) | Unary::OptionalChain(_, _) => {
                 // TODO:
-                Err(CompileError::todo(None, item.position()))
+                Err(CompileError::todo(None, item.position().into()))
             }
 
             Unary::Constant(keyword, position) => match keyword {
@@ -713,7 +713,7 @@ impl FunctionGenerator {
 
                 Keyword::Null | Keyword::Undefined => Ok((item.clone(), InferredType::Unknown)),
 
-                _ => Err(CompileError::todo(None, *position)),
+                _ => Err(CompileError::todo(None, (*position).into())),
             },
         }
     }
@@ -740,7 +740,7 @@ impl FunctionGenerator {
 
             Unary::Parenthesis(expr) => Self::generate_unary(asm, expr.item(), scope),
 
-            Unary::Assertion(ref value, ref type_desc, position) => {
+            Unary::TypeAssertion(ref value, ref type_desc, position) => {
                 let target = scope
                     .types()
                     .get(&type_desc.identifier().to_string())
@@ -851,7 +851,7 @@ impl FunctionGenerator {
                 //     return Err(CompileError::todo(None, *position))
                 // }
                 #[allow(dead_code)]
-                _ => return Err(CompileError::todo(None, *position)),
+                _ => return Err(CompileError::todo(None, (*position).into())),
             },
 
             Unary::Binary(op, _position, ref lhs, ref rhs) => match op {
@@ -997,11 +997,11 @@ impl FunctionGenerator {
                 }
 
                 BinaryOperator::LogicalAnd | BinaryOperator::LogicalOr => {
-                    return Err(CompileError::todo(None, item.position()))
+                    return Err(CompileError::todo(None, item.position().into()))
                 }
 
                 BinaryOperator::Exponentiation => {
-                    return Err(CompileError::todo(None, item.position()))
+                    return Err(CompileError::todo(None, item.position().into()))
                 }
             },
 
@@ -1023,7 +1023,7 @@ impl FunctionGenerator {
                 _ => {
                     return Err(CompileError::todo(
                         Some(format!("The constant '{:?}' is not supported", constant)),
-                        item.position(),
+                        item.position().into(),
                     ))
                 }
             },
@@ -1097,13 +1097,13 @@ impl FunctionGenerator {
             }
             Unary::StringLiteral(_, _position) => {
                 // TODO:
-                return Err(CompileError::todo(None, item.position()));
+                return Err(CompileError::todo(None, item.position().into()));
             }
 
             Unary::Invoke(callee, args) => {
                 let identifier = match callee.as_ref() {
                     Unary::Identifier(v) => Ok(v),
-                    _ => Err(CompileError::todo(None, callee.position())),
+                    _ => Err(CompileError::todo(None, callee.position().into())),
                 }?;
 
                 let func_desc = scope
@@ -1135,24 +1135,8 @@ impl FunctionGenerator {
                             },
                         )?;
                     }
-                    FunctionBody::InlineOp(op) => {
-                        //     match op.class() {
-                        //     toyir::OpClass::BinOp | toyir::OpClass::Cmp => {
-                        //         asm.emit_binop(*op)?;
-                        //     }
-                        //     toyir::OpClass::UnOp => {
-                        //         asm.emit_unop(*op)?;
-                        //     }
-                        //     toyir::OpClass::NoParam => {
-                        //         asm.emit_independent(*op)?;
-                        //     }
-                        //     _ => {
-                        return Err(CompileError::internal_inconsistency(
-                            &format!("Not supported inline opcode: {:?}", op),
-                            item.position().into(),
-                        ));
-                        //     }
-                        // }
+                    FunctionBody::Inline(emitter) => {
+                        emitter(asm)?;
                     }
                 }
 
@@ -1167,20 +1151,20 @@ impl FunctionGenerator {
                 // TODO:
                 return Err(CompileError::todo(
                     None,
-                    u.position().merged(&expr.position()),
+                    u.position().merged(&expr.position()).into(),
                 ));
             }
             Unary::Member(_u, identifier) => {
                 // TODO:
-                return Err(CompileError::todo(None, identifier.id_position()));
+                return Err(CompileError::todo(None, identifier.id_position().into()));
             }
             Unary::OptionalChain(_u, identifier) => {
                 // TODO:
-                return Err(CompileError::todo(None, identifier.id_position()));
+                return Err(CompileError::todo(None, identifier.id_position().into()));
             }
             Unary::New(_c, _p, position) => {
                 // TODO:
-                return Err(CompileError::todo(None, *position));
+                return Err(CompileError::todo(None, (*position).into()));
             }
         }
     }

@@ -37,7 +37,7 @@ export function add(a: int, b: int): int {
 ```
 
 - Declares a function with the given identifier and argument list. The function entity is provided by an external module or environment.
-- If the `export` modifier is present, even functions not referenced from within the module will be output to binary.
+- If the `export` modifier is present, the function can be called from outside. Also, the function is no longer omitted from the binary due to optimization.
 
 ### declare-type statement
 

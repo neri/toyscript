@@ -54,6 +54,7 @@ impl MinimalCodeOptimizer {
     }
 
     fn _optimize(&mut self) -> Result<(), OptimizeError> {
+        #[allow(unused_mut)]
         let mut will_remove_vars = Vec::new();
 
         for _ in 0..2 {
@@ -465,14 +466,14 @@ impl MinimalCodeOptimizer {
                 }
             }
 
-            // Mark local vars to be removed in the next turn.
-            will_remove_vars.clear();
-            for item in self.locals.iter() {
-                if item.identifier().unwrap_or_default().starts_with("_") || item.read_count > 0 {
-                } else {
-                    will_remove_vars.push(item.index());
-                }
-            }
+            // Mark local vars to be removed in the next loop.
+            // will_remove_vars.clear();
+            // for item in self.locals.iter() {
+            //     if item.identifier().unwrap_or_default().starts_with("_") || item.read_count > 0 {
+            //     } else {
+            //         will_remove_vars.push(item.index());
+            //     }
+            // }
         }
 
         if true {

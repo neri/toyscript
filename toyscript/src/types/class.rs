@@ -11,7 +11,7 @@ use types::{
 
 pub const CTOR_NAME: &str = ".ctor";
 
-pub const CAST_NAME: &str = ".cast";
+pub const CAST_NAME: &str = "new";
 
 #[derive(Debug)]
 pub struct ClassDescriptor {
@@ -32,11 +32,11 @@ impl ClassDescriptor {
 
         let identifier = decl.identifier().clone();
 
-        let super_class = if let Some(type_desc) = decl.super_class() {
-            if let Some(v) = types.get(type_desc.as_str()) {
+        let super_class = if let Some(id) = decl.super_class() {
+            if let Some(v) = types.get(id.as_str()) {
                 Some(v.clone())
             } else {
-                return Err(CompileError::identifier_not_found(&type_desc));
+                return Err(CompileError::identifier_not_found(&id));
             }
         } else {
             None

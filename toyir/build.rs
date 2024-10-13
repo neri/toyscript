@@ -110,6 +110,9 @@ fn make_primitive(
         primitives.insert(name, primitive);
     }
 
+    let mut sorted_primitives = primitives.values().collect::<Vec<_>>();
+    sorted_primitives.sort_by(|a, b| a.type_id.cmp(&b.type_id));
+
     let mut os = File::create(dest_path).unwrap();
 
     write!(
@@ -124,7 +127,7 @@ pub enum {class_name} {{
 "
     )
     .unwrap();
-    for type_desc in primitives.values() {
+    for type_desc in sorted_primitives.iter() {
         writeln!(os, "    /// \"{}\"", type_desc.name).unwrap();
         writeln!(
             os,
@@ -145,11 +148,11 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for keyword in primitives.keys() {
+    for type_desc in sorted_primitives.iter() {
         writeln!(
             os,
             "            Self::{},",
-            to_camel_case_identifier(keyword),
+            to_camel_case_identifier(&type_desc.name),
         )
         .unwrap();
     }
@@ -187,12 +190,12 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for keyword in primitives.keys() {
+    for type_desc in sorted_primitives.iter() {
         writeln!(
             os,
             "            Self::{} => {:?},",
-            to_camel_case_identifier(keyword),
-            keyword,
+            to_camel_case_identifier(&type_desc.name),
+            type_desc.name,
         )
         .unwrap();
     }
@@ -208,7 +211,7 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives.values() {
+    for type_desc in sorted_primitives.iter() {
         writeln!(
             os,
             "            Self::{} => {},",
@@ -228,7 +231,7 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives.values() {
+    for type_desc in sorted_primitives.iter() {
         writeln!(
             os,
             "            Self::{} => {},",
@@ -248,7 +251,7 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives.values() {
+    for type_desc in sorted_primitives.iter() {
         writeln!(
             os,
             "            Self::{} => {},",
@@ -310,8 +313,8 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives
-        .values()
+    for type_desc in sorted_primitives
+        .iter()
         .filter(|v| matches!(v.kind, TypeKind::Integer | TypeKind::Float))
     {
         writeln!(os, "            Self::{} => true,", type_desc.identifier,).unwrap();
@@ -329,8 +332,8 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives
-        .values()
+    for type_desc in sorted_primitives
+        .iter()
         .filter(|v| matches!(v.kind, TypeKind::Integer | TypeKind::Unsigned))
     {
         writeln!(os, "            Self::{} => true,", type_desc.identifier,).unwrap();
@@ -348,8 +351,8 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives
-        .values()
+    for type_desc in sorted_primitives
+        .iter()
         .filter(|v| matches!(v.kind, TypeKind::Float))
     {
         writeln!(os, "            Self::{} => true,", type_desc.identifier,).unwrap();
@@ -367,7 +370,7 @@ impl {class_name} {{
     )
     .unwrap();
 
-    for type_desc in primitives.values() {
+    for type_desc in sorted_primitives.iter() {
         let dest_type = match type_desc.kind {
             TypeKind::Integer | TypeKind::Unsigned => {
                 format!(
@@ -529,8 +532,12 @@ fn make_irop(src_path: &str, dest_path: &str, class_name: &str, comment: &str) {
     let mut kinds = Vec::new();
     for line in read_to_string(src_path).unwrap().lines().skip(1) {
         let mut cols = line.split(",");
+        let comment = cols.next().unwrap();
+        if comment.starts_with("#") {
+            continue;
+        }
         let keyword = cols.next().unwrap().to_owned();
-        if keyword.is_empty() || keyword.starts_with("#") {
+        if keyword.is_empty() {
             continue;
         }
         let kind = cols.next().unwrap().to_owned();

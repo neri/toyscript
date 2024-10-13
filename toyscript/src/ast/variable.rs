@@ -1,10 +1,8 @@
 //! Variable Declarations
 
-use super::expression::Expression;
-use super::Identifier;
-use crate::keyword::Keyword;
 use crate::*;
-use ast::class::TypeDeclaration;
+use ast::{class::TypeDeclaration, expression::Expression, typeparam::TypeParameter, Identifier};
+use keyword::Keyword;
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug, Clone)]
@@ -28,6 +26,7 @@ impl VariableDeclaration {
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
         ending_tokens: Option<&[TokenType<Keyword>]>,
+        type_params: &[TypeParameter],
     ) -> Result<Self, CompileError> {
         let allowed_ending = ending_tokens.unwrap_or(&[
             TokenType::Eof,
@@ -67,14 +66,14 @@ impl VariableDeclaration {
             let position_start = identifier.id_position().start();
 
             let type_desc = if let Ok(_) = tokens.expect_symbol(':') {
-                let var_type = TypeDeclaration::expect(tokens)?;
+                let var_type = TypeDeclaration::expect(tokens, type_params)?;
                 Some(var_type)
             } else {
                 None
             };
 
             let assignment = if let Ok(_) = tokens.expect_symbol('=') {
-                let assignment = Expression::parse(tokens, Some(allowed_ending))?;
+                let assignment = Expression::parse(tokens, Some(allowed_ending), type_params)?;
                 Some(assignment)
             } else {
                 None
@@ -109,6 +108,7 @@ impl VariableDeclaration {
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
+        type_params: &[TypeParameter],
     ) -> Result<Self, CompileError> {
         let position_start = modifier_tokens
             .iter()
@@ -138,7 +138,7 @@ impl VariableDeclaration {
         let identifier = Identifier::from_tokens(tokens)?;
 
         let type_decl = if let Ok(_) = tokens.expect_symbol(':') {
-            Some(TypeDeclaration::expect(tokens)?)
+            Some(TypeDeclaration::expect(tokens, type_params)?)
         } else {
             None
         };

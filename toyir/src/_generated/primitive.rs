@@ -5,44 +5,44 @@
 /// ToyScript Primitive Types
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Primitive {
-    /// "f32"
-    F32 = 0x12,
-    /// "f64"
-    F64 = 0x22,
-    /// "i16"
-    I16 = 0x08,
-    /// "i32"
-    I32 = 0x10,
-    /// "i64"
-    I64 = 0x20,
-    /// "i8"
-    I8 = 0x04,
-    /// "u16"
-    U16 = 0x09,
-    /// "u32"
-    U32 = 0x11,
-    /// "u64"
-    U64 = 0x21,
-    /// "u8"
-    U8 = 0x05,
     /// "void"
     Void = 0x00,
+    /// "i8"
+    I8 = 0x04,
+    /// "u8"
+    U8 = 0x05,
+    /// "i16"
+    I16 = 0x08,
+    /// "u16"
+    U16 = 0x09,
+    /// "i32"
+    I32 = 0x10,
+    /// "u32"
+    U32 = 0x11,
+    /// "f32"
+    F32 = 0x12,
+    /// "i64"
+    I64 = 0x20,
+    /// "u64"
+    U64 = 0x21,
+    /// "f64"
+    F64 = 0x22,
 }
 
 impl Primitive {
     pub fn all_values() -> &'static [Self] {
         &[
-            Self::F32,
-            Self::F64,
-            Self::I16,
-            Self::I32,
-            Self::I64,
-            Self::I8,
-            Self::U16,
-            Self::U32,
-            Self::U64,
-            Self::U8,
             Self::Void,
+            Self::I8,
+            Self::U8,
+            Self::I16,
+            Self::U16,
+            Self::I32,
+            Self::U32,
+            Self::F32,
+            Self::I64,
+            Self::U64,
+            Self::F64,
         ]
     }
 
@@ -65,65 +65,65 @@ impl Primitive {
 
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-            Self::I16 => "i16",
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-            Self::I8 => "i8",
-            Self::U16 => "u16",
-            Self::U32 => "u32",
-            Self::U64 => "u64",
-            Self::U8 => "u8",
             Self::Void => "void",
+            Self::I8 => "i8",
+            Self::U8 => "u8",
+            Self::I16 => "i16",
+            Self::U16 => "u16",
+            Self::I32 => "i32",
+            Self::U32 => "u32",
+            Self::F32 => "f32",
+            Self::I64 => "i64",
+            Self::U64 => "u64",
+            Self::F64 => "f64",
         }
     }
 
     pub const fn bits_of(&self) -> usize {
         match self {
-            Self::F32 => 32,
-            Self::F64 => 64,
-            Self::I16 => 16,
-            Self::I32 => 32,
-            Self::I64 => 64,
-            Self::I8 => 8,
-            Self::U16 => 16,
-            Self::U32 => 32,
-            Self::U64 => 64,
-            Self::U8 => 8,
             Self::Void => 0,
+            Self::I8 => 8,
+            Self::U8 => 8,
+            Self::I16 => 16,
+            Self::U16 => 16,
+            Self::I32 => 32,
+            Self::U32 => 32,
+            Self::F32 => 32,
+            Self::I64 => 64,
+            Self::U64 => 64,
+            Self::F64 => 64,
         }
     }
 
     pub const fn size_of(&self) -> usize {
         match self {
-            Self::F32 => 4,
-            Self::F64 => 8,
-            Self::I16 => 2,
-            Self::I32 => 4,
-            Self::I64 => 8,
-            Self::I8 => 1,
-            Self::U16 => 2,
-            Self::U32 => 4,
-            Self::U64 => 8,
-            Self::U8 => 1,
             Self::Void => 0,
+            Self::I8 => 1,
+            Self::U8 => 1,
+            Self::I16 => 2,
+            Self::U16 => 2,
+            Self::I32 => 4,
+            Self::U32 => 4,
+            Self::F32 => 4,
+            Self::I64 => 8,
+            Self::U64 => 8,
+            Self::F64 => 8,
         }
     }
 
     pub const fn align_of(&self) -> usize {
         match self {
-            Self::F32 => 4,
-            Self::F64 => 8,
-            Self::I16 => 2,
-            Self::I32 => 4,
-            Self::I64 => 8,
-            Self::I8 => 1,
-            Self::U16 => 2,
-            Self::U32 => 4,
-            Self::U64 => 8,
-            Self::U8 => 1,
             Self::Void => 0,
+            Self::I8 => 1,
+            Self::U8 => 1,
+            Self::I16 => 2,
+            Self::U16 => 2,
+            Self::I32 => 4,
+            Self::U32 => 4,
+            Self::F32 => 4,
+            Self::I64 => 8,
+            Self::U64 => 8,
+            Self::F64 => 8,
         }
     }
 
@@ -149,26 +149,26 @@ impl Primitive {
 
     pub const fn is_signed(&self) -> bool {
         match self {
-            Self::F32 => true,
-            Self::F64 => true,
+            Self::I8 => true,
             Self::I16 => true,
             Self::I32 => true,
+            Self::F32 => true,
             Self::I64 => true,
-            Self::I8 => true,
+            Self::F64 => true,
             _ => false
         }
     }
 
     pub const fn is_integer(&self) -> bool {
         match self {
-            Self::I16 => true,
-            Self::I32 => true,
-            Self::I64 => true,
             Self::I8 => true,
-            Self::U16 => true,
-            Self::U32 => true,
-            Self::U64 => true,
             Self::U8 => true,
+            Self::I16 => true,
+            Self::U16 => true,
+            Self::I32 => true,
+            Self::U32 => true,
+            Self::I64 => true,
+            Self::U64 => true,
             _ => false
         }
     }
@@ -183,17 +183,17 @@ impl Primitive {
 
     pub fn storage_type(&self) -> Self {
         match self {
-            Self::F32 => Self::F32,
-            Self::F64 => Self::F64,
-            Self::I16 => Self::I32,
-            Self::I32 => Self::I32,
-            Self::I64 => Self::I64,
-            Self::I8 => Self::I32,
-            Self::U16 => Self::I32,
-            Self::U32 => Self::I32,
-            Self::U64 => Self::I64,
-            Self::U8 => Self::I32,
             Self::Void => Self::Void,
+            Self::I8 => Self::I32,
+            Self::U8 => Self::I32,
+            Self::I16 => Self::I32,
+            Self::U16 => Self::I32,
+            Self::I32 => Self::I32,
+            Self::U32 => Self::I32,
+            Self::F32 => Self::F32,
+            Self::I64 => Self::I64,
+            Self::U64 => Self::I64,
+            Self::F64 => Self::F64,
         }
     }
 

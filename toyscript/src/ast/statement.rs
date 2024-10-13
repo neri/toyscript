@@ -7,6 +7,7 @@ use ast::{
     decorator::Decorator,
     expression::Expression,
     function::{FunctionDeclaration, FunctionSyntaxFlavor},
+    typeparam::TypeParameter,
     variable::VariableDeclaration,
     Identifier,
 };
@@ -79,7 +80,10 @@ pub enum ForInit {
 }
 
 impl Statement {
-    pub fn parse(tokens: &mut TokenStream<Keyword>) -> Result<Self, CompileError> {
+    pub fn parse(
+        tokens: &mut TokenStream<Keyword>,
+        type_params: &[TypeParameter],
+    ) -> Result<Self, CompileError> {
         let mut modifiers = Vec::new();
         let mut decorators = Vec::<Decorator>::new();
         loop {
@@ -110,6 +114,7 @@ impl Statement {
                                 &token,
                                 None,
                                 tokens,
+                                type_params,
                             )?;
                             return Ok(Self::Function(Arc::new(func_decl)));
                         }
@@ -124,6 +129,7 @@ impl Statement {
                                 token,
                                 tokens,
                                 None,
+                                type_params,
                             )?;
                             return Ok(Self::Variable(var_decl));
                         }
@@ -165,19 +171,24 @@ impl Statement {
                                     token,
                                     tokens,
                                     Some(&[TokenType::Symbol(','), TokenType::Symbol(';')]),
+                                    type_params,
                                 )?)
                             } else {
-                                ForInit::Expr(Expression::parse(tokens, ending_mode!(';'))?)
+                                ForInit::Expr(Expression::parse(
+                                    tokens,
+                                    ending_mode!(';'),
+                                    type_params,
+                                )?)
                             };
 
                             expect_symbol(tokens, ';')?;
-                            let cond = Expression::parse(tokens, ending_mode!(';'))?;
+                            let cond = Expression::parse(tokens, ending_mode!(';'), type_params)?;
                             expect_symbol(tokens, ';')?;
-                            let step = Expression::parse(tokens, ending_mode!(')'))?;
+                            let step = Expression::parse(tokens, ending_mode!(')'), type_params)?;
                             expect_symbol(tokens, ')')?;
 
                             let begin_block = expect_symbol(tokens, '{')?;
-                            let block = Block::parse(begin_block, tokens)?;
+                            let block = Block::parse(begin_block, tokens, type_params)?;
                             return Ok(Self::ForStatement(Box::new(ForStatement {
                                 init,
                                 cond,
@@ -198,6 +209,7 @@ impl Statement {
                                             &kind,
                                             None,
                                             tokens,
+                                            type_params,
                                         )?;
                                         return Ok(Self::Function(Arc::new(func_decl)));
                                     }
@@ -220,7 +232,8 @@ impl Statement {
                                         }
                                         let identifier = Identifier::from_tokens(tokens)?;
                                         expect_symbol(tokens, '=')?;
-                                        let type_decl = TypeDeclaration::expect(tokens)?;
+                                        let type_decl =
+                                            TypeDeclaration::expect(tokens, type_params)?;
                                         expect_eol(tokens)?;
                                         return Ok(Self::TypeAlias(identifier, type_decl));
                                     }
@@ -248,7 +261,8 @@ impl Statement {
                                 ));
                             } else {
                                 let position_start = token.position().start();
-                                let expr: Expression = Expression::parse(tokens, None)?;
+                                let expr: Expression =
+                                    Expression::parse(tokens, None, type_params)?;
                                 let position_end = expr.position().end();
                                 expect_eol(tokens)?;
                                 return Ok(Self::ReturnStatement(
@@ -267,9 +281,9 @@ impl Statement {
                                 ));
                             }
 
-                            let expr = Expression::parse(tokens, ending_mode!('{'))?;
+                            let expr = Expression::parse(tokens, ending_mode!('{'), type_params)?;
                             let begin_block = expect_symbol(tokens, '{')?;
-                            let block = Block::parse(begin_block, tokens)?;
+                            let block = Block::parse(begin_block, tokens, type_params)?;
                             let mut statements = Vec::new();
                             statements.push(IfType::If(expr, block));
                             loop {
@@ -277,13 +291,14 @@ impl Statement {
                                     break;
                                 }
                                 if tokens.expect(&[TokenType::Keyword(Keyword::If)]).is_ok() {
-                                    let expr = Expression::parse(tokens, ending_mode!('{'))?;
+                                    let expr =
+                                        Expression::parse(tokens, ending_mode!('{'), type_params)?;
                                     let begin_block = expect_symbol(tokens, '{')?;
-                                    let block = Block::parse(begin_block, tokens)?;
+                                    let block = Block::parse(begin_block, tokens, type_params)?;
                                     statements.push(IfType::ElseIf(expr, block));
                                 } else {
                                     let begin_block = expect_symbol(tokens, '{')?;
-                                    let block = Block::parse(begin_block, tokens)?;
+                                    let block = Block::parse(begin_block, tokens, type_params)?;
                                     statements.push(IfType::Else(block));
                                 }
                             }
@@ -299,9 +314,9 @@ impl Statement {
                                 ));
                             }
 
-                            let expr = Expression::parse(tokens, ending_mode!('{'))?;
+                            let expr = Expression::parse(tokens, ending_mode!('{'), type_params)?;
                             let begin_block = expect_symbol(tokens, '{')?;
-                            let block = Block::parse(begin_block, tokens)?;
+                            let block = Block::parse(begin_block, tokens, type_params)?;
                             return Ok(Self::WhileStatement(expr, block));
                         }
                         Keyword::Break => {
@@ -341,7 +356,7 @@ impl Statement {
                             }
 
                             tokens.unshift();
-                            let expr = Expression::parse(tokens, None)?;
+                            let expr = Expression::parse(tokens, None, type_params)?;
                             expect_eol(tokens)?;
                             return Ok(Self::Expression(expr));
                         }
@@ -357,7 +372,7 @@ impl Statement {
                         ));
                     }
 
-                    let block = Block::parse(token, tokens)?;
+                    let block = Block::parse(token, tokens, type_params)?;
                     return Ok(Self::Block(block));
                 }
                 TokenType::Symbol('@') => {
@@ -379,7 +394,7 @@ impl Statement {
                     }
 
                     tokens.unshift();
-                    let expr = Expression::parse(tokens, None)?;
+                    let expr = Expression::parse(tokens, None, type_params)?;
                     expect_eol(tokens)?;
                     return Ok(Self::Expression(expr));
                 }

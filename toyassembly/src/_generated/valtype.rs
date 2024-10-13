@@ -1,8 +1,8 @@
-//! ToyAssembly Value Types
+//! WebAssembly Value Types
 
 /* This file is generated automatically. DO NOT EDIT DIRECTLY. */
 
-/// ToyAssembly Value Types
+/// WebAssembly Value Types
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ValType {
     /// "f32"

@@ -1,7 +1,7 @@
 # ToyIR
 
 * ToyIR is an intermediate language designed for internal processing of ToyScript. NOT FOR EXTERNAL EXCHANGE.
-* Most opcode has a corresponding WebAssembly instruction, which differs significantly from raw WebAssembly in that it explicitly specifies stack input and output. However, stack I/O is strictly determined on a per-instruction basis, so it is not possible to specify a value that deviates from the expected value.
+* Most IR opcodes are bound to the corresponding WebAssembly instructions. Stack input/output must be specified strictly in a manner similar to SSA.
 * Variable length using an array of 32-bit words, with the first word in the same format in all opcodes.
 
 ### First word format
@@ -160,7 +160,7 @@
 
 [(len|opcode), result, lhs, rhs]
 := %result = drop_right %lhs, %rhs
-   { %lhs, rhs } -> { %result }
+   { %lhs, %rhs } -> { %result }
 
 [(len|opcode), dummy, lhs, rhs]
 := drop2 %lhs, %rhs

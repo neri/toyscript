@@ -1,4 +1,4 @@
-//! TotAssembly Types
+//! WebAssembly Types
 
 #[path = "../_generated/valtype.rs"]
 mod _valtype;

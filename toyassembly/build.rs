@@ -11,7 +11,7 @@ fn main() {
             "./src/misc/valtype.txt",
             "./src/_generated/valtype.rs",
             "ValType",
-            "ToyAssembly Value Types",
+            "WebAssembly Value Types",
             &[],
         );
     }

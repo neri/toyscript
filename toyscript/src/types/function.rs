@@ -117,13 +117,47 @@ impl FunctionDescriptor {
         }))
     }
 
-    pub fn instrinc_inline_op(
+    pub fn intrinsic_inline_op(
         name: &str,
         modifiers: ModifierFlag,
         param_types: &[Arc<TypeDescriptor>],
         result_type: &Arc<TypeDescriptor>,
         op: toyir::Op,
         func_idx: FuncIndex,
+    ) -> Result<Arc<Self>, CompileError> {
+        let body: Box<InlineAsmEmitter> = match op.class() {
+            toyir::OpClass::BinOp | toyir::OpClass::Cmp => {
+                Box::new(move |asm: &mut toyir::FunctionAssembler<'_>| {
+                    asm.emit_binop(op)?;
+                    Ok(())
+                })
+            }
+            toyir::OpClass::UnOp => Box::new(move |asm: &mut toyir::FunctionAssembler<'_>| {
+                asm.emit_unop(op)?;
+                Ok(())
+            }),
+            toyir::OpClass::NoParam => Box::new(move |asm: &mut toyir::FunctionAssembler<'_>| {
+                asm.emit_independent(op)?;
+                Ok(())
+            }),
+            _ => {
+                return Err(CompileError::internal_inconsistency(
+                    &format!("Not supported inline opcode: {:?}", op),
+                    ErrorPosition::Unspecified,
+                ));
+            }
+        };
+
+        Self::intrinsic_inline(name, modifiers, param_types, result_type, func_idx, body)
+    }
+
+    pub fn intrinsic_inline(
+        name: &str,
+        modifiers: ModifierFlag,
+        param_types: &[Arc<TypeDescriptor>],
+        result_type: &Arc<TypeDescriptor>,
+        func_idx: FuncIndex,
+        body: Box<InlineAsmEmitter>,
     ) -> Result<Arc<Self>, CompileError> {
         let identifier = name.to_owned();
         let signature = TypeSystem::mangled2(&identifier);
@@ -142,7 +176,7 @@ impl FunctionDescriptor {
             import_from: None,
             params,
             result_type: result_type.clone(),
-            body: FunctionBody::InlineOp(op),
+            body: FunctionBody::Inline(body),
             // TODO:
             position: TokenPosition::empty(),
         }))
@@ -216,14 +250,15 @@ impl core::fmt::Debug for FunctionDescriptor {
             .field("import_from", &self.import_from)
             .field("params", &self.params)
             .field("result_type", &self.result_type)
-            // .field("body", &self.body)
-            .field("position", &self.position)
+            // .field("position", &self.position)
             .finish()
     }
 }
 
-#[derive(Debug)]
 pub enum FunctionBody {
     Block(Block),
-    InlineOp(toyir::Op),
+    Inline(Box<InlineAsmEmitter>),
 }
+
+pub type InlineAsmEmitter =
+    dyn Fn(&mut toyir::FunctionAssembler) -> Result<(), CompileError> + 'static;

@@ -1,8 +1,10 @@
 //! Function Declarations
 
-use super::{block::Block, typeparam::TypeParameter, Identifier};
 use crate::{keyword::ModifierFlag, *};
-use ast::{class::TypeDeclaration, decorator::Decorator};
+use ast::{
+    block::Block, class::TypeDeclaration, decorator::Decorator, typeparam::TypeParameter,
+    Identifier,
+};
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
@@ -33,6 +35,7 @@ impl FunctionDeclaration {
         decisive_token: &Token<Keyword>,
         id_token: Option<&Token<Keyword>>,
         tokens: &mut TokenStream<Keyword>,
+        type_params: &[TypeParameter],
     ) -> Result<Self, CompileError> {
         let start_token = modifier_tokens
             .iter()
@@ -57,7 +60,7 @@ impl FunctionDeclaration {
             Identifier::from_tokens(tokens)?
         };
 
-        let type_params = TypeParameter::parse(tokens)?;
+        let type_params = TypeParameter::parse(tokens, type_params)?;
 
         expect_symbol(tokens, '(')?;
         let mut parameters = Vec::new();
@@ -70,7 +73,7 @@ impl FunctionDeclaration {
             };
 
             expect_symbol(tokens, ':')?;
-            let var_type = TypeDeclaration::expect(tokens)?;
+            let var_type = TypeDeclaration::expect(tokens, &type_params)?;
             parameters.push(Parameter::new(var_name, var_type));
 
             let next = expect(tokens, &[TokenType::Symbol(','), TokenType::Symbol(')')])?;
@@ -80,7 +83,7 @@ impl FunctionDeclaration {
         }
 
         let result_type = if tokens.expect_symbol(':').is_ok() {
-            Some(TypeDeclaration::expect(tokens)?)
+            Some(TypeDeclaration::expect(tokens, &type_params)?)
         } else {
             None
         };
@@ -90,7 +93,7 @@ impl FunctionDeclaration {
         match flavor {
             FunctionSyntaxFlavor::Function => {
                 let block_begin = expect_symbol(tokens, '{')?;
-                block = Block::parse(block_begin, tokens)?;
+                block = Block::parse(block_begin, tokens, &type_params)?;
                 import_from = None;
             }
             FunctionSyntaxFlavor::Declare => {
@@ -100,7 +103,7 @@ impl FunctionDeclaration {
             FunctionSyntaxFlavor::Class => {
                 // TODO:
                 let block_begin = expect_symbol(tokens, '{')?;
-                block = Block::parse(block_begin, tokens)?;
+                block = Block::parse(block_begin, tokens, &type_params)?;
                 import_from = None;
             }
         }

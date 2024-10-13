@@ -1,14 +1,14 @@
-use super::Identifier;
-use crate::{
-    ast::{function::FunctionDeclaration, variable::VariableDeclaration},
-    keyword::{Keyword, ModifierFlag},
-    *,
-};
+use crate::*;
 use ast::{
-    decorator::Decorator, expression::Expression, function::FunctionSyntaxFlavor,
+    decorator::Decorator,
+    expression::Expression,
+    function::{FunctionDeclaration, FunctionSyntaxFlavor},
     typeparam::TypeParameter,
+    variable::VariableDeclaration,
+    Identifier,
 };
 use core::ops::ControlFlow;
+use keyword::{Keyword, ModifierFlag};
 use token::{Token, TokenPosition, TokenStream};
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ impl ClassDeclaration {
 
         let identifier = Identifier::from_tokens(tokens)?;
 
-        let type_params = TypeParameter::parse(tokens)?;
+        let type_params = TypeParameter::parse(tokens, &[])?;
 
         let super_class = if tokens.expect_keyword(Keyword::Extends).is_ok() {
             let super_id = Identifier::from_tokens(tokens)?;
@@ -52,6 +52,7 @@ impl ClassDeclaration {
         expect_symbol(tokens, '{')?;
         let mut var_decls = Vec::new();
         let mut functions = Vec::new();
+        let mut ctor_exists = false;
 
         {
             let mut modifiers = Vec::new();
@@ -79,8 +80,10 @@ impl ClassDeclaration {
                                     &token,
                                     Some(&token),
                                     tokens,
+                                    &type_params,
                                 )?;
                                 functions.push(Arc::new(member));
+                                ctor_exists = true;
                             }
                             _ => return Err(CompileError::unexpected_token(&token)),
                         }
@@ -110,6 +113,7 @@ impl ClassDeclaration {
                                     token,
                                     tokens,
                                     None,
+                                    &type_params,
                                 )?;
                                 var_decls.push(member);
                             }
@@ -121,6 +125,7 @@ impl ClassDeclaration {
                                     &token,
                                     Some(&token),
                                     tokens,
+                                    &type_params,
                                 )?;
                                 functions.push(Arc::new(member));
                             }
@@ -137,6 +142,10 @@ impl ClassDeclaration {
             .position()
             .merged(&tokens.peek_last().unwrap().position());
 
+        if !ctor_exists {
+            // TODO:
+        }
+
         Ok(Self {
             decorators,
             modifiers,
@@ -150,7 +159,7 @@ impl ClassDeclaration {
     }
 
     #[inline]
-    pub fn decorations(&self) -> &[Decorator] {
+    pub fn decorators(&self) -> &[Decorator] {
         &self.decorators
     }
 
@@ -213,15 +222,16 @@ enum MemberKind {
 
 #[derive(Debug)]
 pub struct EnumDeclaration {
-    decorations: Vec<Decorator>,
+    decorators: Vec<Decorator>,
     modifiers: ModifierFlag,
     identifier: Identifier,
+    type_params: Vec<TypeParameter>,
     variants: Vec<(Identifier, Option<Expression>)>,
 }
 
 impl EnumDeclaration {
     pub fn parse(
-        decorations: Vec<Decorator>,
+        decorators: Vec<Decorator>,
         modifier_tokens: &[Token<Keyword>],
         decisive_token: Token<Keyword>,
         tokens: &mut TokenStream<Keyword>,
@@ -236,6 +246,8 @@ impl EnumDeclaration {
 
         let identifier = Identifier::from_tokens(tokens)?;
 
+        let type_params = TypeParameter::parse(tokens, &[])?;
+
         let mut variants = Vec::new();
 
         expect_symbol(tokens, '{')?;
@@ -247,7 +259,7 @@ impl EnumDeclaration {
                     let identifier = Identifier::from_token(&token);
 
                     let assignment = if tokens.expect_symbol('=').is_ok() {
-                        Some(Expression::parse(tokens, ending_mode!(','))?)
+                        Some(Expression::parse(tokens, ending_mode!(','), &type_params)?)
                     } else {
                         None
                     };
@@ -271,16 +283,17 @@ impl EnumDeclaration {
         expect_eol(tokens)?;
 
         Ok(Self {
-            decorations,
+            decorators,
             modifiers,
             identifier,
+            type_params,
             variants,
         })
     }
 
     #[inline]
-    pub fn decorations(&self) -> &[Decorator] {
-        &self.decorations
+    pub fn decorators(&self) -> &[Decorator] {
+        &self.decorators
     }
 
     #[inline]
@@ -294,6 +307,11 @@ impl EnumDeclaration {
     }
 
     #[inline]
+    pub fn type_params(&self) -> &[TypeParameter] {
+        &self.type_params
+    }
+
+    #[inline]
     pub fn variants(&self) -> &[(Identifier, Option<Expression>)] {
         &self.variants
     }
@@ -302,11 +320,15 @@ impl EnumDeclaration {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeDeclaration {
     Simple(Identifier),
+    TypeParameter(Identifier),
     Optional(Identifier),
 }
 
 impl TypeDeclaration {
-    pub fn expect(tokens: &mut TokenStream<Keyword>) -> Result<Self, CompileError> {
+    pub fn expect(
+        tokens: &mut TokenStream<Keyword>,
+        type_params: &[TypeParameter],
+    ) -> Result<Self, CompileError> {
         let token = tokens.next_non_blank();
         let first_elem = match token.token_type() {
             TokenType::Identifier => Identifier::parse(token, tokens).map(|v| v)?,
@@ -339,6 +361,12 @@ impl TypeDeclaration {
             return Ok(Self::Optional(first_elem));
         }
 
+        for type_param in type_params {
+            if *type_param.identifier() == first_elem {
+                return Ok(Self::TypeParameter(first_elem));
+            }
+        }
+
         Ok(Self::Simple(first_elem))
     }
 
@@ -346,21 +374,24 @@ impl TypeDeclaration {
         match self {
             Self::Simple(v) => v.id_position(),
             Self::Optional(v) => v.id_position(),
+            Self::TypeParameter(v) => v.id_position(),
         }
     }
 
     #[inline]
     pub fn to_string(&self) -> String {
         match self {
-            TypeDeclaration::Simple(v) => v.to_string(),
-            TypeDeclaration::Optional(v) => format!("{}?", v.to_string()),
+            Self::Simple(v) => v.to_string(),
+            Self::Optional(v) => format!("{}?", v.to_string()),
+            Self::TypeParameter(v) => v.to_string(),
         }
     }
 
     pub fn identifier(&self) -> &Identifier {
         match self {
-            TypeDeclaration::Simple(v) => v,
-            TypeDeclaration::Optional(v) => v,
+            Self::Simple(v) => v,
+            Self::Optional(v) => v,
+            Self::TypeParameter(v) => v,
         }
     }
 }

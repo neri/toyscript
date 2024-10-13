@@ -1,7 +1,7 @@
 //! ToyScript Type System
 
 use crate::*;
-use ast::{float::Float, integer::Integer, statement::Statement};
+use ast::{class::TypeDeclaration, float::Float, integer::Integer, statement::Statement, Ast};
 use class::ClassDescriptor;
 use function::FunctionDescriptor;
 use index::{ClassIndex, FuncIndex};
@@ -48,7 +48,7 @@ pub struct TypeSystem {
 }
 
 impl TypeSystem {
-    pub fn new(name: &str, ast: ast::Ast) -> Result<Self, CompileError> {
+    pub fn new(name: &str, ast: Ast) -> Result<Self, CompileError> {
         let mut system = Self {
             name: name.to_owned(),
             global_names: BTreeMap::new(),
@@ -128,11 +128,10 @@ impl TypeSystem {
                     Statement::Class(class_decl) => {
                         will_waiting_ids.push(class_decl.identifier().to_string());
 
-                        let hi_bit = 0;
                         match ClassDescriptor::parse(
                             &class_decl,
                             &system,
-                            ClassIndex(system.classes.len() as u32 | hi_bit),
+                            ClassIndex(system.classes.len() as u32),
                         ) {
                             Ok(class) => system.add_class(class)?,
                             Err(err) => match err.kind() {
@@ -220,11 +219,10 @@ impl TypeSystem {
 
                 let mut waiting_list2 = Vec::new();
                 for class_decl in waiting_class_list.iter().rev() {
-                    let hi_bit = 0;
                     match ClassDescriptor::parse(
                         &class_decl,
                         &system,
-                        ClassIndex(system.classes.len() as u32 | hi_bit),
+                        ClassIndex(system.classes.len() as u32),
                     ) {
                         Ok(class) => system.add_class(class)?,
                         Err(err) => match err.kind() {
@@ -239,11 +237,10 @@ impl TypeSystem {
                 last_class_errors.clear();
                 let mut waiting_list2 = Vec::new();
                 for class_decl in waiting_class_list.iter() {
-                    let hi_bit = 0;
                     match ClassDescriptor::parse(
                         &class_decl,
                         &system,
-                        ClassIndex(system.classes.len() as u32 | hi_bit),
+                        ClassIndex(system.classes.len() as u32),
                     ) {
                         Ok(class) => system.add_class(class)?,
                         Err(err) => match err.kind() {
@@ -285,8 +282,38 @@ impl TypeSystem {
             system.add_function(&func).unwrap();
         }
 
+        for func_decl in &func_decls {
+            let func = FunctionDescriptor::parse(
+                None,
+                None,
+                func_decl,
+                &system,
+                FuncIndex(system.functions.len() as u32),
+            )?;
+            system
+                .add_function(&func)
+                .ok_or(CompileError::duplicate_identifier(func_decl.identifier()))?;
+        }
+
         {
-            let func = FunctionDescriptor::instrinc_inline_op(
+            let mut classes2 = Vec::new();
+            core::mem::swap(&mut classes2, &mut system.classes);
+            for class in &classes2 {
+                for member in class.members() {
+                    match member.1 {
+                        class::ClassMember::Field(_, _) => {}
+                        class::ClassMember::Method(func_desc) => {
+                            func_desc.set_index(FuncIndex(system.functions.len() as u32));
+                            system.add_function(func_desc).unwrap();
+                        }
+                    }
+                }
+            }
+            system.classes = classes2;
+        }
+
+        {
+            let func = FunctionDescriptor::intrinsic_inline_op(
                 "unreachable",
                 ModifierFlag::empty(),
                 &[],
@@ -296,35 +323,6 @@ impl TypeSystem {
             )?;
             system.add_function(&func).unwrap();
         }
-
-        for func_decl in &func_decls {
-            let hi_bit = (func_decl.import_from().is_some() as u32) << 31;
-            let func = FunctionDescriptor::parse(
-                None,
-                None,
-                func_decl,
-                &system,
-                FuncIndex(system.functions.len() as u32 | hi_bit),
-            )?;
-            system
-                .add_function(&func)
-                .ok_or(CompileError::duplicate_identifier(func_decl.identifier()))?;
-        }
-
-        let mut classes2 = Vec::new();
-        core::mem::swap(&mut classes2, &mut system.classes);
-        for class in &classes2 {
-            for member in class.members() {
-                match member.1 {
-                    class::ClassMember::Field(_, _) => {}
-                    class::ClassMember::Method(func_desc) => {
-                        func_desc.set_index(FuncIndex(system.functions.len() as u32));
-                        system.add_function(func_desc).unwrap();
-                    }
-                }
-            }
-        }
-        system.classes = classes2;
 
         Ok(system)
     }
@@ -390,10 +388,10 @@ impl TypeSystem {
     }
 
     #[inline]
-    pub fn from_ast(&self, ast_type: &ast::class::TypeDeclaration) -> Option<Arc<TypeDescriptor>> {
+    pub fn from_ast(&self, ast_type: &TypeDeclaration) -> Option<Arc<TypeDescriptor>> {
         match ast_type {
-            ast::class::TypeDeclaration::Simple(id) => self.get(&id.to_string()),
-            ast::class::TypeDeclaration::Optional(id) => {
+            TypeDeclaration::Simple(id) => self.get(&id.to_string()),
+            TypeDeclaration::Optional(id) => {
                 if let Some(v) = self.get(&ast_type.to_string()) {
                     return Some(v);
                 }
@@ -406,12 +404,13 @@ impl TypeSystem {
                 drop(types);
                 Some(type_desc)
             }
+            TypeDeclaration::TypeParameter(_) => None,
         }
     }
 
     #[inline]
     pub fn primitive_type(&self, primitive: Primitive) -> Arc<TypeDescriptor> {
-        self.resolve(primitive.as_str()).unwrap()
+        self.get(primitive.as_str()).unwrap()
     }
 
     #[inline]
@@ -536,14 +535,14 @@ impl TypeSystem {
     fn _make_simple_alias(&mut self, identifier: &str, target: &str) -> Result<(), CompileError> {
         self.make_alias(
             &Identifier::new(identifier),
-            &ast::class::TypeDeclaration::Simple(Identifier::new(target)),
+            &TypeDeclaration::Simple(Identifier::new(target)),
         )
     }
 
     pub fn make_alias(
         &mut self,
         identifier: &Identifier,
-        type_decl: &ast::class::TypeDeclaration,
+        type_decl: &TypeDeclaration,
     ) -> Result<(), CompileError> {
         if self.get(identifier.as_str()).is_some() {
             return Err(CompileError::duplicate_identifier(identifier));
@@ -610,8 +609,8 @@ impl TypeSystem {
         format!("${}", identifier,)
     }
 
-    pub fn cast_func_identifier(old_type: &str, new_type: &str) -> String {
-        Self::prefixed_identifier(Some(old_type), class::CAST_NAME, &[new_type])
+    pub fn type_cast_func_identifier(old_type: &str, new_type: &str) -> String {
+        Self::prefixed_identifier(Some(new_type), class::CAST_NAME, &[old_type])
     }
 
     pub fn infer_as(
@@ -759,6 +758,23 @@ impl TypeSystem {
             return Err(CompileError::could_not_infer2(position));
         };
 
+        if let Some(conv_func) = self.function(&Self::type_cast_func_identifier(
+            src_type.identifier(),
+            target.identifier(),
+        )) {
+            if let Some(asm) = asm {
+                match conv_func.body() {
+                    function::FunctionBody::Block(_) => {
+                        asm.ir_call(conv_func.index().as_usize(), 1, 1)?;
+                    }
+                    function::FunctionBody::Inline(emitter) => {
+                        emitter(asm)?;
+                    }
+                }
+            }
+            return Ok(true);
+        }
+
         let Some(src_type) = src_type.primitive_type().filter(|v| *v != Primitive::Void) else {
             return Err(CompileError::cast_error(
                 src_type.identifier(),
@@ -848,54 +864,36 @@ impl TypeSystem {
     }
 }
 
-pub trait Resolve<T: ?Sized> {
-    fn resolve(&self, v: &T) -> Option<Arc<TypeDescriptor>>;
-
+pub trait ResolvePrimitive<T: ?Sized> {
     fn resolve_primitive(&self, v: &T) -> Option<Primitive>;
 }
 
-impl Resolve<ast::class::TypeDeclaration> for TypeSystem {
-    fn resolve(&self, desc: &ast::class::TypeDeclaration) -> Option<Arc<TypeDescriptor>> {
-        self.resolve(desc.to_string().as_str())
-    }
-
-    fn resolve_primitive(&self, desc: &ast::class::TypeDeclaration) -> Option<Primitive> {
-        self.resolve(desc)
+impl ResolvePrimitive<TypeDeclaration> for TypeSystem {
+    fn resolve_primitive(&self, desc: &TypeDeclaration) -> Option<Primitive> {
+        self.get(&desc.to_string())
             .and_then(|ref v| self.resolve_primitive(v))
     }
 }
 
-impl Resolve<str> for TypeSystem {
-    fn resolve(&self, identifier: &str) -> Option<Arc<TypeDescriptor>> {
-        self.get(identifier).and_then(|v| self.resolve(&v))
-    }
-
+impl ResolvePrimitive<str> for TypeSystem {
     fn resolve_primitive(&self, identifier: &str) -> Option<Primitive> {
-        self.resolve(identifier)
+        self.get(identifier)
             .and_then(|ref v| self.resolve_primitive(v))
     }
 }
 
-impl Resolve<Arc<TypeDescriptor>> for TypeSystem {
-    fn resolve(&self, desc: &Arc<TypeDescriptor>) -> Option<Arc<TypeDescriptor>> {
-        match desc.kind() {
-            TypeKind::Primitive(_) => Some(desc.clone()),
-            TypeKind::Alias(alias) => self.resolve(alias),
-            TypeKind::Reference(_)
-            | TypeKind::Class(_)
-            | TypeKind::Function(_)
-            | TypeKind::Optional(_) => None,
-        }
-    }
-
+impl ResolvePrimitive<Arc<TypeDescriptor>> for TypeSystem {
     fn resolve_primitive(&self, desc: &Arc<TypeDescriptor>) -> Option<Primitive> {
-        match desc.kind() {
-            TypeKind::Primitive(primitive) => Some(*primitive),
-            TypeKind::Alias(alias) => self.resolve_primitive(alias),
-            TypeKind::Reference(_)
-            | TypeKind::Class(_)
-            | TypeKind::Function(_)
-            | TypeKind::Optional(_) => None,
+        let mut desc = desc;
+        loop {
+            match desc.kind() {
+                TypeKind::Primitive(primitive) => return Some(*primitive),
+                TypeKind::Alias(alias) => desc = alias,
+                TypeKind::Reference(_)
+                | TypeKind::Class(_)
+                | TypeKind::Function(_)
+                | TypeKind::Optional(_) => return None,
+            }
         }
     }
 }

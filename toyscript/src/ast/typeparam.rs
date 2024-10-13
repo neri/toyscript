@@ -1,5 +1,5 @@
-use super::*;
-use class::TypeDeclaration;
+use crate::*;
+use ast::{class::TypeDeclaration, Identifier};
 use token::TokenStream;
 
 #[derive(Debug, Clone)]
@@ -9,8 +9,11 @@ pub struct TypeParameter {
 }
 
 impl TypeParameter {
-    pub fn parse(tokens: &mut TokenStream<Keyword>) -> Result<Vec<TypeParameter>, CompileError> {
-        let mut type_params = Vec::new();
+    pub fn parse(
+        tokens: &mut TokenStream<Keyword>,
+        super_params: &[TypeParameter],
+    ) -> Result<Vec<TypeParameter>, CompileError> {
+        let mut type_params = super_params.to_vec();
 
         if tokens.expect_symbol('<').is_err() {
             return Ok(type_params);
@@ -19,10 +22,15 @@ impl TypeParameter {
         loop {
             let identifier = Identifier::from_tokens(tokens)?;
             let extends = if tokens.expect_keyword(Keyword::Extends).is_ok() {
-                Some(TypeDeclaration::expect(tokens)?)
+                Some(TypeDeclaration::expect(tokens, &type_params)?)
             } else {
                 None
             };
+            for old_item in &type_params {
+                if *old_item.identifier() == identifier {
+                    return Err(CompileError::duplicate_identifier(&identifier));
+                }
+            }
             let type_param = Self {
                 identifier,
                 extends,

@@ -1,6 +1,5 @@
-use super::*;
 use crate::*;
-use token::ArcStringSlice;
+use token::{ArcStringSlice, TokenPosition};
 
 #[derive(Clone)]
 pub struct Identifier {
